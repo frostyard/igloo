@@ -1,0 +1,45 @@
+# igloo binary
+igloo
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go coverage
+*.cover
+*.coverprofile
+
+# Dependency directories
+vendor/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config files (may contain sensitive data)
+.igloo.yaml
+config.yaml
+
+# Logs
+*.log
+
+
+# direnv
+.envrc
+# Added by goreleaser init:
+dist/
+completions/
+manpages/
+igloo_test
