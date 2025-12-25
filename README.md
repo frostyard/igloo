@@ -162,7 +162,7 @@ Contributions are welcome! Feel free to open issues and pull requests.
 Igloo stands on the shoulders of giants:
 
 - **[Distrobox](https://github.com/89luca89/distrobox)** — The original inspiration for seamless container-based development environments
-- **[Blincus](https://blincus.dev)** — A kindred spirit in the Incus ecosystem
+- **[Blincus](https://blincus.dev)** — blincus is igloo version 0.
 
 ## License
 
