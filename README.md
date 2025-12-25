@@ -157,7 +157,7 @@ Each project directory can have its own igloo. They're completely isolated!
 
 Contributions are welcome! Feel free to open issues and pull requests.
 
-## � Credits
+## Credits
 
 Igloo stands on the shoulders of giants:
 
