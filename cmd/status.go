@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
 
 	"github.com/frostyard/igloo/internal/config"
 	"github.com/frostyard/igloo/internal/incus"
@@ -89,6 +92,29 @@ func runStatus() error {
 		fmt.Println()
 		fmt.Println(styles.Header("Packages"))
 		fmt.Printf("  %s\n", cfg.Packages.Install)
+	}
+
+	// Show init scripts
+	scriptsPath := config.ScriptsPath()
+	if entries, err := os.ReadDir(scriptsPath); err == nil {
+		var scripts []string
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				name := entry.Name()
+				// Skip hidden files and .example files
+				if len(name) > 0 && name[0] != '.' && filepath.Ext(name) != ".example" {
+					scripts = append(scripts, name)
+				}
+			}
+		}
+		if len(scripts) > 0 {
+			sort.Strings(scripts)
+			fmt.Println()
+			fmt.Println(styles.Header("Init Scripts"))
+			for _, s := range scripts {
+				fmt.Printf("  %s\n", s)
+			}
+		}
 	}
 
 	return nil
