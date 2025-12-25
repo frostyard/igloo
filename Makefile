@@ -44,7 +44,7 @@ deps: ## Download dependencies
 	@go mod download
 	@go mod tidy
 
-prep: fmt lint test build ## Format, lint, test, and build
+prep: deps fmt lint test build ## Format, lint, test, and build
 
 man: ## Generate man pages
 	@./scripts/manpages.sh
