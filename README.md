@@ -157,7 +157,14 @@ Each project directory can have its own igloo. They're completely isolated!
 
 Contributions are welcome! Feel free to open issues and pull requests.
 
-## 📄 License
+## � Credits
+
+Igloo stands on the shoulders of giants:
+
+- **[Distrobox](https://github.com/89luca89/distrobox)** — The original inspiration for seamless container-based development environments
+- **[Blincus](https://blincus.dev)** — A kindred spirit in the Incus ecosystem
+
+## �📄 License
 
 MIT License — build all the igloos you want! 🏔️
 
