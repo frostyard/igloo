@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/ini.v1"
 )
@@ -38,6 +39,7 @@ type IglooConfig struct {
 	Packages  PackagesConfig
 	Mounts    MountsConfig
 	Display   DisplayConfig
+	Symlinks  []string // List of paths to symlink from ~/host/ to ~/
 }
 
 // ContainerConfig holds container-specific settings
@@ -87,6 +89,18 @@ func Load(path string) (*IglooConfig, error) {
 
 	if err := cfg.Section("display").MapTo(&config.Display); err != nil {
 		return nil, fmt.Errorf("failed to parse display section: %w", err)
+	}
+
+	// Parse symlinks section (comma-separated list)
+	symlinksKey := cfg.Section("symlinks").Key("paths")
+	if symlinksKey != nil && symlinksKey.String() != "" {
+		paths := strings.Split(symlinksKey.String(), ",")
+		for _, p := range paths {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				config.Symlinks = append(config.Symlinks, p)
+			}
+		}
 	}
 
 	return config, nil
@@ -143,6 +157,18 @@ func Write(path string, config *IglooConfig) error {
 	}
 	if _, err := displaySec.NewKey("gpu", fmt.Sprintf("%t", config.Display.GPU)); err != nil {
 		return err
+	}
+
+	// Symlinks section
+	if len(config.Symlinks) > 0 {
+		symlinksSec, err := cfg.NewSection("symlinks")
+		if err != nil {
+			return err
+		}
+		symlinksSec.Comment = "Symlinks from ~/host/ to ~/ (files/folders that exist on host)"
+		if _, err := symlinksSec.NewKey("paths", strings.Join(config.Symlinks, ", ")); err != nil {
+			return err
+		}
 	}
 
 	return cfg.SaveTo(path)
