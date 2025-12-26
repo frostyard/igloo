@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/frostyard/igloo/internal/config"
 	"github.com/frostyard/igloo/internal/incus"
@@ -16,7 +18,8 @@ func enterCmd() *cobra.Command {
 		Use:   "enter",
 		Short: "Enter the igloo development environment",
 		Long: `Enter opens an interactive shell in the igloo container.
-If the container is not running, it will be started first.`,
+If the container is not running, it will be started first.
+If the .igloo configuration has changed, you will be prompted to rebuild.`,
 		Example: `  # Enter the igloo environment
   igloo enter`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -43,10 +46,47 @@ func runEnter() error {
 	if err != nil {
 		return fmt.Errorf("failed to check instance: %w", err)
 	}
+
+	if exists {
+		// Check if config has changed since last provision
+		changed, currentHash, err := config.ConfigChanged(cfg.Container.Name)
+		if err != nil {
+			fmt.Println(styles.Warning(fmt.Sprintf("Could not check for config changes: %v", err)))
+		} else if changed {
+			fmt.Println(styles.Warning("Configuration in .igloo/ has changed since last provision."))
+			fmt.Print(styles.Info("Rebuild container to apply changes? [y/N]: "))
+
+			reader := bufio.NewReader(os.Stdin)
+			response, _ := reader.ReadString('\n')
+			response = strings.TrimSpace(strings.ToLower(response))
+
+			if response == "y" || response == "yes" {
+				fmt.Println(styles.Info("Removing old container..."))
+				if err := client.Delete(cfg.Container.Name, true); err != nil {
+					return fmt.Errorf("failed to remove container: %w", err)
+				}
+				exists = false
+			} else {
+				// Update stored hash to current so we don't keep asking
+				if err := config.StoreHash(cfg.Container.Name, currentHash); err != nil {
+					fmt.Println(styles.Warning(fmt.Sprintf("Could not update config hash: %v", err)))
+				}
+			}
+		}
+	}
+
 	if !exists {
 		fmt.Println(styles.Info("Container does not exist, provisioning..."))
 		if err := provisionContainer(cfg); err != nil {
 			return fmt.Errorf("failed to provision container: %w", err)
+		}
+
+		// Store the config hash after successful provision
+		currentHash, err := config.HashConfigDir()
+		if err == nil {
+			if err := config.StoreHash(cfg.Container.Name, currentHash); err != nil {
+				fmt.Println(styles.Warning(fmt.Sprintf("Could not store config hash: %v", err)))
+			}
 		}
 	}
 
