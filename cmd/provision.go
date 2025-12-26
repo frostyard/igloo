@@ -79,6 +79,33 @@ func provisionContainer(cfg *config.IglooConfig) error {
 		return fmt.Errorf("cloud-init failed: %w", err)
 	}
 
+	// Create symlinks from ~/host/ to ~/
+	if len(cfg.Symlinks) > 0 {
+		fmt.Println(styles.Info("Creating symlinks..."))
+		homeDir := fmt.Sprintf("/home/%s", username)
+		hostDir := fmt.Sprintf("%s/host", homeDir)
+		for _, link := range cfg.Symlinks {
+			// Clean the path and remove leading ~/  or / if present
+			link = filepath.Clean(link)
+			if len(link) >= 2 && link[:2] == "~/" {
+				link = link[2:]
+			} else if len(link) >= 1 && link[0] == '/' {
+				link = link[1:]
+			}
+
+			source := filepath.Join(hostDir, link)
+			target := filepath.Join(homeDir, link)
+
+			// Create parent directory if needed, then create symlink
+			// Use -f to force overwrite, and || true to not fail if source doesn't exist
+			parentDir := filepath.Dir(target)
+			cmd := fmt.Sprintf("mkdir -p %s && [ -e %s ] && ln -sf %s %s || true", parentDir, source, source, target)
+			if err := client.ExecAsUser(name, username, "/bin/sh", "-c", cmd); err != nil {
+				fmt.Println(styles.Warning(fmt.Sprintf("Failed to create symlink for %s: %v", link, err)))
+			}
+		}
+	}
+
 	// Add display passthrough (now /run/user/<uid> exists)
 	if cfg.Display.Enabled {
 		fmt.Println(styles.Info("Configuring display passthrough..."))

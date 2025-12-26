@@ -180,6 +180,26 @@ func (c *Client) ExecAsRoot(name string, command ...string) error {
 	return cmd.Run()
 }
 
+// ExecAsUser runs a command in an instance as a specific user
+func (c *Client) ExecAsUser(name, username string, command ...string) error {
+	uid := os.Getuid()
+	gid := os.Getgid()
+
+	args := []string{
+		"exec", name,
+		"--user", fmt.Sprintf("%d", uid),
+		"--group", fmt.Sprintf("%d", gid),
+		"--env", "HOME=/home/" + username,
+		"--env", "USER=" + username,
+		"--",
+	}
+	args = append(args, command...)
+	cmd := exec.Command("incus", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 // ExecInteractive runs an interactive shell in an instance
 func (c *Client) ExecInteractive(name, username, workDir string) error {
 	uid := os.Getuid()
@@ -193,7 +213,7 @@ func (c *Client) ExecInteractive(name, username, workDir string) error {
 		"--env", "HOME=/home/" + username,
 		"--env", "USER=" + username,
 		"--env", "XAUTHORITY=/home/" + username + "/.Xauthority",
-		"--", "/bin/bash", "-l",
+		"--", "/bin/bash", "--login", "-i",
 	}
 
 	cmd := exec.Command("incus", args...)

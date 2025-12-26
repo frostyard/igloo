@@ -65,6 +65,55 @@ gpu = false
 		t.Error("Display.GPU = true, want false")
 	}
 
+	// Verify symlinks section (empty in this config)
+	if len(cfg.Symlinks) != 0 {
+		t.Errorf("Symlinks = %v, want empty", cfg.Symlinks)
+	}
+
+}
+
+func TestLoad_WithSymlinks(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "igloo.ini")
+
+	content := `[container]
+image = images:debian/trixie
+name = test-igloo
+
+[packages]
+install =
+
+[mounts]
+home = true
+project = true
+
+[display]
+enabled = true
+gpu = false
+
+[symlinks]
+paths = .gitconfig, .ssh, .config/nvim
+`
+
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Verify symlinks
+	expected := []string{".gitconfig", ".ssh", ".config/nvim"}
+	if len(cfg.Symlinks) != len(expected) {
+		t.Errorf("Symlinks length = %d, want %d", len(cfg.Symlinks), len(expected))
+	}
+	for i, s := range cfg.Symlinks {
+		if s != expected[i] {
+			t.Errorf("Symlinks[%d] = %q, want %q", i, s, expected[i])
+		}
+	}
 }
 
 func TestLoad_FileNotFound(t *testing.T) {

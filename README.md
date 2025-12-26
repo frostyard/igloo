@@ -86,6 +86,9 @@ project = true
 [display]
 enabled = true
 gpu     = true
+
+[symlinks]
+paths = .gitconfig, .ssh, .config/nvim
 ```
 
 ### Init Scripts 📜
@@ -100,6 +103,26 @@ npm install -g yarn
 ```
 
 Scripts run in lexicographical order, so use numbered prefixes like `01-`, `02-`, etc.
+
+### Symlinks 🔗
+
+The `[symlinks]` section lets you link files or folders from your host home directory (`~/host/`) to the container's home (`~/`). This is perfect for sharing dotfiles!
+
+**Default symlinks** (created automatically with `igloo init`):
+
+```ini
+[symlinks]
+paths = .gitconfig, .ssh, .bashrc, .profile, .bash_profile
+```
+
+Each path listed will create a symlink: `~/<path>` → `~/host/<path>`. If a file doesn't exist on your host, it's silently skipped—no errors!
+
+Add more paths as needed:
+
+```ini
+[symlinks]
+paths = .gitconfig, .ssh, .bashrc, .profile, .bash_profile, .config/nvim, .vimrc
+```
 
 ## 🎨 Flags & Options
 

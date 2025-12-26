@@ -117,5 +117,15 @@ func runStatus() error {
 		}
 	}
 
+	// Show symlinks
+	if len(cfg.Symlinks) > 0 {
+		fmt.Println()
+		fmt.Println(styles.Header("Symlinks"))
+		fmt.Printf("  %s ~/host/<path> → ~/<path>\n", styles.Label("Pattern:"))
+		for _, s := range cfg.Symlinks {
+			fmt.Printf("  %s\n", s)
+		}
+	}
+
 	return nil
 }

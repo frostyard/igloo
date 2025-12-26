@@ -104,6 +104,13 @@ func runInit(distro, release, name, packages string) error {
 			Enabled: true,
 			GPU:     true,
 		},
+		Symlinks: []string{
+			".gitconfig",
+			".ssh",
+			".bashrc",
+			".profile",
+			".bash_profile",
+		},
 	}
 
 	// Create .igloo directory and write config file
