@@ -72,6 +72,14 @@ func runEnter() error {
 					fmt.Println(styles.Warning(fmt.Sprintf("Could not update config hash: %v", err)))
 				}
 			}
+		} else if currentHash != "" {
+			// No stored hash yet (first run with existing container) - store it now
+			storedHash, _ := config.GetStoredHash(cfg.Container.Name)
+			if storedHash == "" {
+				if err := config.StoreHash(cfg.Container.Name, currentHash); err != nil {
+					fmt.Println(styles.Warning(fmt.Sprintf("Could not store config hash: %v", err)))
+				}
+			}
 		}
 	}
 
