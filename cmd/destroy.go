@@ -65,6 +65,11 @@ func runDestroy(force, keepConfig bool) error {
 		fmt.Println(styles.Warning(fmt.Sprintf("Container %s does not exist", cfg.Container.Name)))
 	}
 
+	// Remove stored config hash
+	if err := config.RemoveStoredHash(cfg.Container.Name); err != nil {
+		fmt.Println(styles.Warning(fmt.Sprintf("Could not remove stored hash: %v", err)))
+	}
+
 	// Remove .igloo directory unless --keep-config
 	if !keepConfig {
 		fmt.Println(styles.Info("Removing .igloo directory..."))

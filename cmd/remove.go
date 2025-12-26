@@ -59,6 +59,11 @@ func runRemove(force bool) error {
 		return fmt.Errorf("failed to remove instance: %w", err)
 	}
 
+	// Remove stored config hash so next enter will re-provision
+	if err := config.RemoveStoredHash(cfg.Container.Name); err != nil {
+		fmt.Println(styles.Warning(fmt.Sprintf("Could not remove stored hash: %v", err)))
+	}
+
 	fmt.Println(styles.Success(fmt.Sprintf("Container %s removed (.igloo preserved)", cfg.Container.Name)))
 	return nil
 }

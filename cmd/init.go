@@ -164,6 +164,14 @@ echo "Working directory: $(pwd)"
 		return err
 	}
 
+	// Store the config hash for change detection
+	currentHash, err := config.HashConfigDir()
+	if err == nil {
+		if err := config.StoreHash(cfg.Container.Name, currentHash); err != nil {
+			fmt.Println(styles.Warning(fmt.Sprintf("Could not store config hash: %v", err)))
+		}
+	}
+
 	fmt.Println(styles.Info("Run 'igloo enter' to start working"))
 
 	return nil
