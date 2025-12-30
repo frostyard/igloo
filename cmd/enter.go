@@ -117,6 +117,11 @@ func runEnter() error {
 		}
 	}
 
+	// Update Xauthority mount if necessary (file path can change on Wayland)
+	if err := client.UpdateXauthority(cfg.Container.Name); err != nil {
+		fmt.Println(styles.Warning(fmt.Sprintf("Could not update Xauthority: %v", err)))
+	}
+
 	// Get user info
 	username := os.Getenv("USER")
 	cwd, err := os.Getwd()
