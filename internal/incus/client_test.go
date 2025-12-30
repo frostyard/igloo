@@ -2,6 +2,7 @@ package incus
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -77,7 +78,9 @@ func TestUpdateXauthority_WithFile(t *testing.T) {
 		t.Log("UpdateXauthority succeeded (incus may be available)")
 	} else {
 		// Expected case: incus command failed
-		if !containsAny(err.Error(), []string{"incus", "device", "executable file not found", "command not found"}) {
+		errMsg := err.Error()
+		if !strings.Contains(errMsg, "incus") && !strings.Contains(errMsg, "device") &&
+			!strings.Contains(errMsg, "executable file not found") && !strings.Contains(errMsg, "command not found") {
 			t.Errorf("Expected incus-related error, got: %v", err)
 		}
 	}
@@ -117,22 +120,10 @@ func TestUpdateXauthority_CustomPath(t *testing.T) {
 		t.Log("UpdateXauthority succeeded (incus may be available)")
 	} else {
 		// Expected case: incus command failed
-		if !containsAny(err.Error(), []string{"incus", "device", "executable file not found", "command not found"}) {
+		errMsg := err.Error()
+		if !strings.Contains(errMsg, "incus") && !strings.Contains(errMsg, "device") &&
+			!strings.Contains(errMsg, "executable file not found") && !strings.Contains(errMsg, "command not found") {
 			t.Errorf("Expected incus-related error, got: %v", err)
 		}
 	}
-}
-
-// Helper function to check if error contains any of the expected strings
-func containsAny(s string, substrs []string) bool {
-	for _, substr := range substrs {
-		if len(s) >= len(substr) {
-			for i := 0; i <= len(s)-len(substr); i++ {
-				if s[i:i+len(substr)] == substr {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }
