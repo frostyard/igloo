@@ -2,7 +2,7 @@
 
 ## Known Bugs
 
-- the xauthority device changes when x or wayland is restarted. `igloo enter` should validate the existence of the xauthority device on each enter, replacing it if necessary
+- [fixed] the xauthority device changes when x or wayland is restarted. `igloo enter` should validate the existence of the xauthority device on each enter, replacing it if necessary~
 
 ## Ideas
 
