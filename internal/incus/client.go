@@ -154,6 +154,85 @@ func (c *Client) AddGPUDevice(name string) error {
 	return cmd.Run()
 }
 
+// RemoveDevice removes a device from an instance
+func (c *Client) RemoveDevice(name, deviceName string) error {
+	cmd := exec.Command("incus", "config", "device", "remove", name, deviceName)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+// DeviceExists checks if a device exists on an instance
+func (c *Client) DeviceExists(name, deviceName string) (bool, error) {
+	cmd := exec.Command("incus", "config", "device", "show", name)
+	output, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("failed to list devices: %w", err)
+	}
+
+	// Simple check if device name appears in output
+	return strings.Contains(string(output), deviceName+":"), nil
+}
+
+// GetDeviceSource gets the source path of a disk device
+func (c *Client) GetDeviceSource(name, deviceName string) (string, error) {
+	cmd := exec.Command("incus", "config", "device", "get", name, deviceName, "source")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get device source: %w", err)
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// UpdateXauthority updates the xauthority device mount if the source file has changed
+// This is necessary because XWayland can create new Xauthority files when restarted
+func (c *Client) UpdateXauthority(name string) error {
+	// Get current Xauthority file from environment
+	xauthFile := os.Getenv("XAUTHORITY")
+	if xauthFile == "" {
+		xauthFile = os.Getenv("HOME") + "/.Xauthority"
+	}
+
+	// Check if the file exists
+	if _, err := os.Stat(xauthFile); os.IsNotExist(err) {
+		// No xauthority file available, nothing to update
+		return nil
+	}
+
+	// Check if xauthority device exists
+	deviceExists, err := c.DeviceExists(name, "xauthority")
+	if err != nil {
+		return fmt.Errorf("failed to check xauthority device: %w", err)
+	}
+
+	username := os.Getenv("USER")
+	xauthPath := fmt.Sprintf("/home/%s/.Xauthority", username)
+
+	if !deviceExists {
+		// Device doesn't exist, add it
+		return c.AddDiskDevice(name, "xauthority", xauthFile, xauthPath)
+	}
+
+	// Device exists, check if source has changed
+	currentSource, err := c.GetDeviceSource(name, "xauthority")
+	if err != nil {
+		return fmt.Errorf("failed to get current xauthority source: %w", err)
+	}
+
+	if currentSource != xauthFile {
+		// Source has changed, remove and re-add the device
+		if err := c.RemoveDevice(name, "xauthority"); err != nil {
+			return fmt.Errorf("failed to remove old xauthority device: %w", err)
+		}
+
+		if err := c.AddDiskDevice(name, "xauthority", xauthFile, xauthPath); err != nil {
+			return fmt.Errorf("failed to add new xauthority device: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // SetConfig sets a configuration option on an instance
 func (c *Client) SetConfig(name, key, value string) error {
 	cmd := exec.Command("incus", "config", "set", name, key+"="+value)
