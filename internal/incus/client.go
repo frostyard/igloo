@@ -205,10 +205,11 @@ func (c *Client) UpdateXauthority(name string) error {
 		return fmt.Errorf("failed to check xauthority device: %w", err)
 	}
 
+	username := os.Getenv("USER")
+	xauthPath := fmt.Sprintf("/home/%s/.Xauthority", username)
+
 	if !deviceExists {
 		// Device doesn't exist, add it
-		username := os.Getenv("USER")
-		xauthPath := fmt.Sprintf("/home/%s/.Xauthority", username)
 		return c.AddDiskDevice(name, "xauthority", xauthFile, xauthPath)
 	}
 
@@ -224,8 +225,6 @@ func (c *Client) UpdateXauthority(name string) error {
 			return fmt.Errorf("failed to remove old xauthority device: %w", err)
 		}
 
-		username := os.Getenv("USER")
-		xauthPath := fmt.Sprintf("/home/%s/.Xauthority", username)
 		if err := c.AddDiskDevice(name, "xauthority", xauthFile, xauthPath); err != nil {
 			return fmt.Errorf("failed to add new xauthority device: %w", err)
 		}
