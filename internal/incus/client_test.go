@@ -67,7 +67,7 @@ func TestUpdateXauthority_WithFile(t *testing.T) {
 	// This will attempt to call incus commands which will fail without incus installed
 	// but we can verify it at least tries to process the file
 	err := client.UpdateXauthority("test-container")
-	
+
 	// We expect an error because incus isn't available in test environment,
 	// but we're verifying the logic path is taken when the file exists
 	// The function should have attempted to check device existence
@@ -111,7 +111,7 @@ func TestUpdateXauthority_CustomPath(t *testing.T) {
 
 	// This will attempt to call incus commands which will fail without incus installed
 	err := client.UpdateXauthority("test-container")
-	
+
 	// We expect an error because incus isn't available in test environment
 	if err == nil {
 		t.Log("UpdateXauthority succeeded (incus may be available)")
