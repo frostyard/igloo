@@ -102,8 +102,9 @@ func parseOSRelease(path string) map[string]string {
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
-
+	defer func() {
+		_ = f.Close()
+	}()
 	fields := make(map[string]string)
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
