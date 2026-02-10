@@ -90,6 +90,8 @@ changelog:
 
 nfpms:
   - file_name_template: "{{ .ConventionalFileName }}"
+    package_name: frostyard-igloo
+
     contents:
       - src: ./completions/{{ .ProjectName }}.bash
         dst: /etc/bash_completion.d/{{ .ProjectName }}
