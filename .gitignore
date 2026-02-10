@@ -46,3 +46,4 @@ igloo_test
 
 # Worktrees
 .worktrees/
+.claude/settings.local.json
