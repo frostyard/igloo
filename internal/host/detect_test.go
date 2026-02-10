@@ -72,8 +72,8 @@ ID_LIKE="debian"
 			wantImage: "images:debian/trixie/cloud",
 		},
 		{
-			name: "missing file falls back to debian trixie",
-			content: "",
+			name:      "missing file falls back to debian trixie",
+			content:   "",
 			wantID:    "debian",
 			wantVer:   "trixie",
 			wantImage: "images:debian/trixie/cloud",
