@@ -29,7 +29,7 @@ func (c *Client) InstanceExists(name string) (bool, error) {
 		return false, err
 	}
 
-	var instances []map[string]interface{}
+	var instances []map[string]any
 	if err := json.Unmarshal(output, &instances); err != nil {
 		return false, fmt.Errorf("failed to parse incus output: %w", err)
 	}
