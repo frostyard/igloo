@@ -1,37 +1,63 @@
-# 🏔️ Igloo
+# Igloo
 
-**Build cozy development environments in seconds** ❄️
+**Isolated development containers for GTK apps**
 
-Igloo is a CLI tool that creates isolated Linux development containers using [Incus](https://linuxcontainers.org/incus/). Think of it as your personal igloo in the frozen tundra of system configuration chaos—warm, safe, and exactly how you like it.
+Igloo creates Linux development containers using [Incus](https://linuxcontainers.org/incus/) with automatic display passthrough. Two commands, zero configuration.
 
-## ✨ Features
-
-- 🐧 **Multi-distro support** — Ubuntu, Debian, Fedora, or Arch Linux
-- 🏠 **Home away from home** — Your home directory and project files are automatically mounted
-- 🖥️ **GUI apps just work** — Wayland and X11 passthrough with optional GPU acceleration
-- 👤 **Seamless user mapping** — Same UID/GID as your host, no permission headaches
-- 📜 **Custom init scripts** — Automate your environment setup
-- ⚡ **Fast iteration** — Destroy and rebuild in seconds
-
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
-# Initialize a new igloo in your project directory
-cd ~/projects/my-awesome-app
-igloo init
-
-# Enter your cozy development environment
-igloo enter
-
-# When you're done for the day
-igloo stop
-
-# Start fresh? No problem!
-igloo destroy
-igloo init
+cd ~/projects/my-gtk-app
+igloo                      # creates and enters the container
 ```
 
-## 📦 Installation
+That's it. Igloo auto-detects your host OS, creates a matching container, mounts your project directory, copies your dotfiles, and sets up display passthrough with GPU support.
+
+When you're done with the container:
+
+```bash
+igloo destroy
+```
+
+## Setup Script
+
+Optionally create a `.igloo.sh` in your project root to install dependencies on first creation:
+
+```bash
+#!/bin/bash
+apt-get update
+apt-get install -y build-essential libgtk-4-dev meson ninja-build
+```
+
+To reprovision after changing `.igloo.sh`, run `igloo destroy` then `igloo`.
+
+## Commands
+
+| Command | Description |
+| --- | --- |
+| `igloo` | Enter the container (creates it if needed) |
+| `igloo destroy` | Remove the container completely |
+| `igloo --no-gui` | Enter without display/GPU passthrough |
+
+## What Happens on First Run
+
+1. Detects your host distro from `/etc/os-release` (follows `ID_LIKE` for derivatives)
+2. Creates an Incus container with matching image
+3. Maps your user (same UID/GID, sudo access)
+4. Mounts the project directory at the same absolute path
+5. Copies dotfiles (`.gitconfig`, `.ssh/`, `.bashrc`, `.profile`, `.bash_profile`)
+6. Sets up X11/Wayland display passthrough with GPU
+7. Runs `.igloo.sh` if it exists
+8. Drops you into a shell
+
+On subsequent runs, it just enters the existing container (starting it if stopped) and refreshes display passthrough.
+
+## Installation
+
+### Prerequisites
+
+- [Incus](https://linuxcontainers.org/incus/docs/main/installing/) installed and configured
+- Your user added to the `incus` group
 
 ### From Source
 
@@ -42,157 +68,18 @@ make build
 sudo cp igloo /usr/local/bin/
 ```
 
-### Prerequisites
+## Tips
 
-- [Incus](https://linuxcontainers.org/incus/docs/main/installing/) installed and configured
-- Your user added to the `incus` group
-
-## 🎛️ Commands
-
-| Command         | Description                        |
-| --------------- | ---------------------------------- |
-| `igloo init`    | Create a new igloo environment     |
-| `igloo enter`   | Enter the igloo (starts if needed) |
-| `igloo stop`    | Stop the running igloo             |
-| `igloo status`  | Show environment status            |
-| `igloo remove`  | Remove container, keep config      |
-| `igloo destroy` | Remove everything                  |
-
-## ⚙️ Configuration
-
-Running `igloo init` creates a `.igloo/` directory with your configuration:
-
-```
-.igloo/
-├── igloo.ini          # Main configuration
-└── scripts/           # Init scripts (run during provisioning)
-    └── 00-example.sh.example
-```
-
-### igloo.ini
-
-```ini
-[container]
-image = images:debian/trixie/cloud
-name  = igloo-myproject
-
-[packages]
-install = git, vim, curl
-
-[mounts]
-home    = true
-project = true
-
-[display]
-enabled = true
-gpu     = true
-
-[symlinks]
-paths = .gitconfig, .ssh, .config/nvim
-```
-
-### Init Scripts 📜
-
-Drop shell scripts in `.igloo/scripts/` to customize your environment:
-
-```bash
-# .igloo/scripts/01-install-tools.sh
-#!/bin/bash
-apt-get install -y nodejs npm
-npm install -g yarn
-```
-
-Scripts run in lexicographical order, so use numbered prefixes like `01-`, `02-`, etc.
-
-### Symlinks 🔗
-
-The `[symlinks]` section lets you link files or folders from your host home directory (`~/host/`) to the container's home (`~/`). This is perfect for sharing dotfiles!
-
-**Default symlinks** (created automatically with `igloo init`):
-
-```ini
-[symlinks]
-paths = .gitconfig, .ssh, .bashrc, .profile, .bash_profile
-```
-
-Each path listed will create a symlink: `~/<path>` → `~/host/<path>`. If a file doesn't exist on your host, it's silently skipped—no errors!
-
-Add more paths as needed:
-
-```ini
-[symlinks]
-paths = .gitconfig, .ssh, .bashrc, .profile, .bash_profile, .config/nvim, .vimrc
-```
-
-## 🎨 Flags & Options
-
-### igloo init
-
-```bash
-igloo init --distro ubuntu --release noble    # Use Ubuntu Noble
-igloo init --distro fedora --release 43       # Use Fedora 43
-igloo init --name my-dev-box                  # Custom container name
-igloo init --packages "go,nodejs,python3"     # Pre-install packages
-```
-
-### igloo destroy
-
-```bash
-igloo destroy              # Remove container and .igloo directory
-igloo destroy --keep-config  # Keep .igloo directory for later
-igloo destroy --force      # Force remove without stopping
-```
-
-## 🗂️ Directory Layout (Inside the Container)
-
-```
-/home/youruser/
-├── host/              # Your host home directory
-└── workspace/
-    └── myproject/     # Your project directory (where you ran igloo init)
-```
-
-## 💡 Tips & Tricks
-
-### Run GUI Apps
-
-```bash
-igloo enter
-code .                 # VS Code just works!
-firefox               # Browse the web
-```
-
-### Use Your Host's Git Config
-
-Your home directory is mounted, so `~/.gitconfig` is already available!
-
-### Quick Rebuild
-
-```bash
-igloo destroy && igloo init   # Fresh start in ~30 seconds
-```
-
-### Multiple Projects, Multiple Igloos
-
-Each project directory can have its own igloo. They're completely isolated!
-
-## 🤝 Contributing
-
-Contributions are welcome! Feel free to open issues and pull requests.
+- Each project directory gets its own container (`igloo-<dirname>`)
+- GUI apps just work inside the container (GTK, Qt, Firefox, VS Code, etc.)
+- The `--no-gui` flag is useful when SSHed into the machine or running headless builds
+- Multiple projects can each have their own igloo, completely isolated
 
 ## Credits
 
-Igloo stands on the shoulders of giants:
-
-- **[Distrobox](https://github.com/89luca89/distrobox)** — The original inspiration for seamless container-based development environments
-- **[Blincus](https://blincus.dev)** — blincus is igloo version 0.
+- **[Distrobox](https://github.com/89luca89/distrobox)** -- The original inspiration
+- **[Blincus](https://blincus.dev)** -- Blincus is igloo version 0
 
 ## License
 
-MIT License — build all the igloos you want! 🏔️
-
----
-
-<p align="center">
-  <i>Stay frosty, friends!</i> ❄️🐧
-</p>
+MIT

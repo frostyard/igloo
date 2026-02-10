@@ -43,3 +43,6 @@ dist/
 completions/
 manpages/
 igloo_test
+
+# Worktrees
+.worktrees/

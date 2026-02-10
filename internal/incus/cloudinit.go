@@ -8,8 +8,6 @@ import (
 	"strings"
 	"text/template"
 	"time"
-
-	"github.com/frostyard/igloo/internal/config"
 )
 
 const cloudInitTemplate = `#cloud-config
@@ -23,72 +21,37 @@ users:
     sudo: ALL=(ALL) NOPASSWD:ALL
     lock_passwd: true
 
-# Set timezone to match host
 timezone: {{.Timezone}}
 
-{{if .Packages}}
-# Install packages
-packages:
-{{range .PackageList}}  - {{.}}
-{{end}}
-{{end}}
-
-# Ensure user home directory exists with correct permissions
 runcmd:
   - mkdir -p /home/{{.Username}}
   - chown {{.UID}}:{{.GID}} /home/{{.Username}}
-  - mkdir -p /home/{{.Username}}/workspace
-  - chown {{.UID}}:{{.GID}} /home/{{.Username}}/workspace
   - mkdir -p /run/user/{{.UID}}
   - chown {{.UID}}:{{.GID}} /run/user/{{.UID}}
   - chmod 700 /run/user/{{.UID}}
 `
 
-// CloudInitData holds the data for cloud-init template
-type CloudInitData struct {
-	Username    string
-	UID         int
-	GID         int
-	Timezone    string
-	Packages    bool
-	PackageList []string
-	Timestamp   string
+type cloudInitData struct {
+	Username  string
+	UID       int
+	GID       int
+	Timezone  string
+	Timestamp string
 }
 
-// GenerateCloudInit creates a cloud-init configuration for the igloo instance
-func GenerateCloudInit(cfg *config.IglooConfig) (string, error) {
-	// Get current user info
+// GenerateCloudInit creates a cloud-init config for user mapping and basic setup.
+func GenerateCloudInit() (string, error) {
 	currentUser, err := user.Current()
 	if err != nil {
 		return "", fmt.Errorf("failed to get current user: %w", err)
 	}
 
-	uid := os.Getuid()
-	gid := os.Getgid()
-
-	// Get timezone
-	timezone := getTimezone()
-
-	// Parse package list
-	var packageList []string
-	if cfg.Packages.Install != "" {
-		packages := strings.Split(cfg.Packages.Install, ",")
-		for _, pkg := range packages {
-			pkg = strings.TrimSpace(pkg)
-			if pkg != "" {
-				packageList = append(packageList, pkg)
-			}
-		}
-	}
-
-	data := CloudInitData{
-		Username:    currentUser.Username,
-		UID:         uid,
-		GID:         gid,
-		Timezone:    timezone,
-		Packages:    len(packageList) > 0,
-		PackageList: packageList,
-		Timestamp:   time.Now().Format(time.RFC3339),
+	data := cloudInitData{
+		Username:  currentUser.Username,
+		UID:       os.Getuid(),
+		GID:       os.Getgid(),
+		Timezone:  getTimezone(),
+		Timestamp: time.Now().Format(time.RFC3339),
 	}
 
 	tmpl, err := template.New("cloud-init").Parse(cloudInitTemplate)
@@ -104,27 +67,18 @@ func GenerateCloudInit(cfg *config.IglooConfig) (string, error) {
 	return buf.String(), nil
 }
 
-// getTimezone attempts to detect the host timezone
 func getTimezone() string {
-	// Try to read from /etc/timezone
 	if data, err := os.ReadFile("/etc/timezone"); err == nil {
 		return strings.TrimSpace(string(data))
 	}
-
-	// Try to read symlink from /etc/localtime
 	if target, err := os.Readlink("/etc/localtime"); err == nil {
-		// /etc/localtime -> /usr/share/zoneinfo/America/New_York
 		parts := strings.Split(target, "/zoneinfo/")
 		if len(parts) == 2 {
 			return parts[1]
 		}
 	}
-
-	// Try TZ environment variable
 	if tz := os.Getenv("TZ"); tz != "" {
 		return tz
 	}
-
-	// Default to UTC
 	return "UTC"
 }

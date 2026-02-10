@@ -29,7 +29,7 @@ func (c *Client) InstanceExists(name string) (bool, error) {
 		return false, err
 	}
 
-	var instances []map[string]interface{}
+	var instances []map[string]any
 	if err := json.Unmarshal(output, &instances); err != nil {
 		return false, fmt.Errorf("failed to parse incus output: %w", err)
 	}
@@ -77,14 +77,6 @@ func (c *Client) Create(name, image, cloudInit string) error {
 // Start starts an instance
 func (c *Client) Start(name string) error {
 	cmd := exec.Command("incus", "start", name)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-// Stop stops an instance
-func (c *Client) Stop(name string) error {
-	cmd := exec.Command("incus", "stop", name)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
