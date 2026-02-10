@@ -39,7 +39,7 @@ func provisionContainer(cfg *config.IglooConfig) error {
 	fmt.Println(styles.Info(fmt.Sprintf("Creating container %s from %s...", name, image)))
 
 	// Generate cloud-init config
-	cloudInit, err := incus.GenerateCloudInit(cfg)
+	cloudInit, err := incus.GenerateCloudInit()
 	if err != nil {
 		return fmt.Errorf("failed to generate cloud-init: %w", err)
 	}
