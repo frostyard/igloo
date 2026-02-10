@@ -82,14 +82,6 @@ func (c *Client) Start(name string) error {
 	return cmd.Run()
 }
 
-// Stop stops an instance
-func (c *Client) Stop(name string) error {
-	cmd := exec.Command("incus", "stop", name)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
 // Delete deletes an instance
 func (c *Client) Delete(name string, force bool) error {
 	args := []string{"delete", name}
