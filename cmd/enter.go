@@ -1,142 +1,188 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"strings"
 
-	"github.com/frostyard/igloo/internal/config"
+	"github.com/frostyard/igloo/internal/display"
+	"github.com/frostyard/igloo/internal/host"
 	"github.com/frostyard/igloo/internal/incus"
 	"github.com/frostyard/igloo/internal/ui"
 	"github.com/spf13/cobra"
 )
 
+var noGUI bool
+
 func enterCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "enter",
-		Short: "Enter the igloo development environment",
-		Long: `Enter opens an interactive shell in the igloo container.
-If the container is not running, it will be started first.
-If the .igloo configuration has changed, you will be prompted to rebuild.`,
-		Example: `  # Enter the igloo environment
-  igloo enter`,
+		Use:   "igloo",
+		Short: "Enter the igloo development container",
+		Long: `Creates and enters an isolated development container.
+
+If no container exists for the current directory, one is created automatically
+using the host OS, with display passthrough and GPU support enabled.
+
+Place a .igloo.sh script in your project root to run custom setup on first creation.`,
+		Example: `  # Enter (or create) the container
+  igloo
+
+  # Enter without GUI support
+  igloo --no-gui`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runEnter()
 		},
 	}
 
+	cmd.Flags().BoolVar(&noGUI, "no-gui", false, "Skip display and GPU passthrough")
+
 	return cmd
+}
+
+// dotfiles to copy from host home to container home on creation.
+var dotfiles = []string{
+	".gitconfig",
+	".ssh",
+	".bashrc",
+	".profile",
+	".bash_profile",
 }
 
 func runEnter() error {
 	styles := ui.NewStyles()
-
-	// Load config
-	cfg, err := config.Load(config.ConfigPath())
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w\nRun 'igloo init' to create a new environment", err)
-	}
-
 	client := incus.NewClient()
 
-	// Check if instance exists, provision if not
-	exists, err := client.InstanceExists(cfg.Container.Name)
-	if err != nil {
-		return fmt.Errorf("failed to check instance: %w", err)
-	}
-
-	if exists {
-		// Check if config has changed since last provision
-		changed, currentHash, err := config.ConfigChanged(cfg.Container.Name)
-		if err != nil {
-			fmt.Println(styles.Warning(fmt.Sprintf("Could not check for config changes: %v", err)))
-		} else if changed {
-			fmt.Println(styles.Warning("Configuration in .igloo/ has changed since last provision."))
-			fmt.Print(styles.Info("Rebuild container to apply changes? [y/N]: "))
-
-			reader := bufio.NewReader(os.Stdin)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(strings.ToLower(response))
-
-			if response == "y" || response == "yes" {
-				fmt.Println(styles.Info("Removing old container..."))
-				if err := client.Delete(cfg.Container.Name, true); err != nil {
-					return fmt.Errorf("failed to remove container: %w", err)
-				}
-				exists = false
-			} else {
-				// Update stored hash to current so we don't keep asking
-				if err := config.StoreHash(cfg.Container.Name, currentHash); err != nil {
-					fmt.Println(styles.Warning(fmt.Sprintf("Could not update config hash: %v", err)))
-				}
-			}
-		} else if currentHash != "" {
-			// No stored hash yet (first run with existing container) - store it now
-			storedHash, _ := config.GetStoredHash(cfg.Container.Name)
-			if storedHash == "" {
-				if err := config.StoreHash(cfg.Container.Name, currentHash); err != nil {
-					fmt.Println(styles.Warning(fmt.Sprintf("Could not store config hash: %v", err)))
-				}
-			}
-		}
-	}
-
-	if !exists {
-		fmt.Println(styles.Info("Container does not exist, provisioning..."))
-		if err := provisionContainer(cfg); err != nil {
-			return fmt.Errorf("failed to provision container: %w", err)
-		}
-
-		// Store the config hash after successful provision
-		currentHash, err := config.HashConfigDir()
-		if err == nil {
-			if err := config.StoreHash(cfg.Container.Name, currentHash); err != nil {
-				fmt.Println(styles.Warning(fmt.Sprintf("Could not store config hash: %v", err)))
-			}
-		}
-	}
-
-	// Check if instance is running
-	running, err := client.IsRunning(cfg.Container.Name)
-	if err != nil {
-		return fmt.Errorf("failed to check instance status: %w", err)
-	}
-
-	if !running {
-		fmt.Println(styles.Info("Starting container..."))
-		if err := client.Start(cfg.Container.Name); err != nil {
-			return fmt.Errorf("failed to start instance: %w", err)
-		}
-
-		// Wait for cloud-init if container was stopped
-		fmt.Println(styles.Info("Waiting for container to be ready..."))
-		if err := client.WaitForCloudInit(cfg.Container.Name); err != nil {
-			fmt.Println(styles.Warning("Cloud-init wait timed out, continuing anyway..."))
-		}
-	}
-
-	// Update Xauthority mount if necessary (file path can change on Wayland)
-	if err := client.UpdateXauthority(cfg.Container.Name); err != nil {
-		fmt.Println(styles.Warning(fmt.Sprintf("Could not update Xauthority: %v", err)))
-	}
-
-	// Get user info
-	username := os.Getenv("USER")
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
-	projectName := filepath.Base(cwd)
-	workDir := fmt.Sprintf("/home/%s/workspace/%s", username, projectName)
+	name := host.ContainerName(cwd)
+	username := os.Getenv("USER")
+	homeDir := os.Getenv("HOME")
 
-	fmt.Println(styles.Info(fmt.Sprintf("Entering %s...", cfg.Container.Name)))
-
-	// Execute interactive shell
-	if err := client.ExecInteractive(cfg.Container.Name, username, workDir); err != nil {
-		return fmt.Errorf("failed to enter container: %w", err)
+	exists, err := client.InstanceExists(name)
+	if err != nil {
+		return fmt.Errorf("failed to check instance: %w", err)
 	}
 
+	if !exists {
+		if err := provision(client, styles, name, username, homeDir, cwd); err != nil {
+			return err
+		}
+	}
+
+	// Start if stopped
+	running, err := client.IsRunning(name)
+	if err != nil {
+		return fmt.Errorf("failed to check instance status: %w", err)
+	}
+	if !running {
+		fmt.Println(styles.Info("Starting container..."))
+		if err := client.Start(name); err != nil {
+			return fmt.Errorf("failed to start instance: %w", err)
+		}
+		fmt.Println(styles.Info("Waiting for container to be ready..."))
+		if err := client.WaitForCloudInit(name); err != nil {
+			fmt.Println(styles.Warning("Cloud-init wait timed out, continuing anyway..."))
+		}
+	}
+
+	// Refresh display passthrough on every entry
+	if !noGUI {
+		if err := client.UpdateXauthority(name); err != nil {
+			fmt.Println(styles.Warning(fmt.Sprintf("Could not update Xauthority: %v", err)))
+		}
+	}
+
+	fmt.Println(styles.Info(fmt.Sprintf("Entering %s...", name)))
+	return client.ExecInteractive(name, username, cwd)
+}
+
+func provision(client *incus.Client, styles *ui.Styles, name, username, homeDir, cwd string) error {
+	// Detect host OS
+	osInfo := host.DetectOS()
+	image := osInfo.Image()
+	fmt.Println(styles.Info(fmt.Sprintf("Detected host: %s/%s", osInfo.ID, osInfo.Version)))
+	fmt.Println(styles.Info(fmt.Sprintf("Creating container %s from %s...", name, image)))
+
+	// Generate cloud-init
+	cloudInit, err := incus.GenerateCloudInit()
+	if err != nil {
+		return fmt.Errorf("failed to generate cloud-init: %w", err)
+	}
+
+	// Create instance
+	if err := client.Create(name, image, cloudInit); err != nil {
+		return fmt.Errorf("failed to create instance: %w", err)
+	}
+
+	// Mount project directory at the same absolute path
+	fmt.Println(styles.Info(fmt.Sprintf("Mounting project at %s...", cwd)))
+	if err := client.AddDiskDevice(name, "project", cwd, cwd); err != nil {
+		return fmt.Errorf("failed to mount project directory: %w", err)
+	}
+
+	// Start container (before display passthrough, so /run/user exists)
+	fmt.Println(styles.Info("Starting container..."))
+	if err := client.Start(name); err != nil {
+		return fmt.Errorf("failed to start instance: %w", err)
+	}
+
+	fmt.Println(styles.Info("Waiting for cloud-init to complete..."))
+	if err := client.WaitForCloudInit(name); err != nil {
+		return fmt.Errorf("cloud-init failed: %w", err)
+	}
+
+	// Copy dotfiles from host home into container home
+	fmt.Println(styles.Info("Copying dotfiles..."))
+	containerHome := fmt.Sprintf("/home/%s", username)
+	for _, df := range dotfiles {
+		src := filepath.Join(homeDir, df)
+		if _, err := os.Stat(src); os.IsNotExist(err) {
+			continue
+		}
+		// Use tar piped into incus exec to copy files/dirs into the container
+		cpCmd := exec.Command("sh", "-c",
+			fmt.Sprintf("tar -cf - -C %s %s | incus exec %s -- tar -xf - -C %s",
+				homeDir, df, name, containerHome))
+		cpCmd.Stdout = os.Stdout
+		cpCmd.Stderr = os.Stderr
+		if err := cpCmd.Run(); err != nil {
+			fmt.Println(styles.Warning(fmt.Sprintf("Could not copy %s: %v", df, err)))
+			continue
+		}
+		// Fix ownership
+		dst := filepath.Join(containerHome, df)
+		if err := client.ExecAsRoot(name, "chown", "-R",
+			fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), dst); err != nil {
+			fmt.Println(styles.Warning(fmt.Sprintf("Could not fix ownership for %s: %v", df, err)))
+		}
+	}
+
+	// Display passthrough
+	if !noGUI {
+		fmt.Println(styles.Info("Configuring display passthrough..."))
+		displayType := display.Detect()
+		if err := display.ConfigurePassthrough(client, name, displayType, true); err != nil {
+			fmt.Println(styles.Warning(fmt.Sprintf("Display passthrough failed: %v", err)))
+			fmt.Println(styles.Warning("GUI applications may not work correctly"))
+		}
+	}
+
+	// Run .igloo.sh if it exists
+	scriptPath := filepath.Join(cwd, ".igloo.sh")
+	if _, err := os.Stat(scriptPath); err == nil {
+		fmt.Println(styles.Info("Running .igloo.sh..."))
+		containerScript := filepath.Join(cwd, ".igloo.sh")
+		if err := client.ExecAsRoot(name, "chmod", "+x", containerScript); err != nil {
+			return fmt.Errorf("failed to make .igloo.sh executable: %w", err)
+		}
+		if err := client.ExecAsRoot(name, "/bin/bash", containerScript); err != nil {
+			return fmt.Errorf(".igloo.sh failed: %w", err)
+		}
+	}
+
+	fmt.Println(styles.Success(fmt.Sprintf("Container %s ready!", name)))
 	return nil
 }
