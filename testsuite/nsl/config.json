@@ -1,0 +1,54 @@
+{
+  "path": "/var/home/bjk/.config/nsl/nsl.conf",
+  "present": false,
+  "settings": [
+    {
+      "key": "vm.memory",
+      "value": 29,
+      "min": 1,
+      "max": 128,
+      "unit": "GiB",
+      "source": "default",
+      "reason": "half of host memory"
+    },
+    {
+      "key": "vm.cpus",
+      "value": 32,
+      "min": 1,
+      "max": 64,
+      "unit": "CPUs",
+      "source": "default",
+      "reason": "host CPUs"
+    },
+    {
+      "key": "machines.autostart",
+      "value": true,
+      "source": "default"
+    },
+    {
+      "key": "machines.idle_timeout",
+      "value": 15,
+      "min": 0,
+      "max": 1440,
+      "unit": "minutes",
+      "source": "default"
+    },
+    {
+      "key": "isolated.memory",
+      "value": 2,
+      "min": 1,
+      "max": 128,
+      "unit": "GiB",
+      "source": "default"
+    },
+    {
+      "key": "isolated.cpus",
+      "value": 2,
+      "min": 1,
+      "max": 64,
+      "unit": "CPUs",
+      "source": "default"
+    }
+  ],
+  "pending": []
+}

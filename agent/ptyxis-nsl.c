@@ -25,15 +25,13 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include <json-glib/json-glib.h>
+
 #include "ptyxis-nsl.h"
 
-/* nsl prints its tables with text/tabwriter: each column starts where the
- * header has a word preceded by at least two spaces, and every row of the
- * table is aligned to those columns. Cells may be empty, so rows are split
- * at the header's column offsets rather than at whitespace.
+/* nsl reports its state with `--json` (nsl ADR-0021). Consumers must ignore
+ * fields they do not know, so only the members used here are read.
  */
-
-typedef gboolean (*RowValidator) (char **cells);
 
 void
 ptyxis_nsl_machine_free (PtyxisNslMachine *machine)
@@ -50,6 +48,7 @@ ptyxis_nsl_image_free (PtyxisNslImage *image)
 {
   g_clear_pointer (&image->selectors, g_strfreev);
   g_clear_pointer (&image->build, g_free);
+  g_clear_pointer (&image->manifest, g_free);
   g_free (image);
 }
 
@@ -59,98 +58,114 @@ ptyxis_nsl_setting_free (PtyxisNslSetting *setting)
   g_clear_pointer (&setting->key, g_free);
   g_clear_pointer (&setting->value, g_free);
   g_clear_pointer (&setting->source, g_free);
+  g_clear_pointer (&setting->unit, g_free);
   g_free (setting);
 }
 
-static GArray *
-column_offsets (const char *header)
+static JsonNode *
+member (JsonObject *object,
+        const char *name,
+        GType       value_type)
 {
-  GArray *offsets = g_array_new (FALSE, FALSE, sizeof (guint));
-  guint zero = 0;
+  JsonNode *node;
 
-  g_array_append_val (offsets, zero);
+  if (object == NULL ||
+      !json_object_has_member (object, name) ||
+      !(node = json_object_get_member (object, name)) ||
+      !JSON_NODE_HOLDS_VALUE (node) ||
+      json_node_get_value_type (node) != value_type)
+    return NULL;
 
-  for (guint i = 2; header[i]; i++)
-    {
-      if (header[i] != ' ' && header[i-1] == ' ' && header[i-2] == ' ')
-        g_array_append_val (offsets, i);
-    }
-
-  return offsets;
+  return node;
 }
 
-static char **
-split_row (const char *line,
-           GArray     *offsets)
+static const char *
+member_string (JsonObject *object,
+               const char *name)
 {
-  gsize len = strlen (line);
-  char **cells = g_new0 (char *, offsets->len + 1);
+  JsonNode *node = member (object, name, G_TYPE_STRING);
 
-  for (guint i = 0; i < offsets->len; i++)
-    {
-      guint begin = g_array_index (offsets, guint, i);
-      guint end = i + 1 < offsets->len ? g_array_index (offsets, guint, i + 1) : len;
-
-      if (begin >= len)
-        cells[i] = g_strdup ("");
-      else
-        cells[i] = g_strstrip (g_strndup (line + begin, MIN (end, len) - begin));
-    }
-
-  return cells;
+  return node ? json_node_get_string (node) : NULL;
 }
 
-/* Returns an array of rows, each a NULL-terminated array of cells, for the
- * table whose header line begins with @first_header. Rows end at the first
- * blank line or the first line @validator rejects.
- */
-static GPtrArray *
-parse_table (const char   *text,
-             const char   *first_header,
-             RowValidator  validator)
+static gboolean
+member_boolean (JsonObject *object,
+                const char *name)
 {
-  g_autoptr(GPtrArray) rows = g_ptr_array_new_with_free_func ((GDestroyNotify)g_strfreev);
-  g_autoptr(GArray) offsets = NULL;
-  g_auto(GStrv) lines = NULL;
-  gsize first_len;
+  JsonNode *node = member (object, name, G_TYPE_BOOLEAN);
 
-  g_return_val_if_fail (first_header != NULL, NULL);
+  return node ? json_node_get_boolean (node) : FALSE;
+}
 
-  if (text == NULL)
-    return g_steal_pointer (&rows);
+static gboolean
+member_int (JsonObject *object,
+            const char *name,
+            gint64     *value)
+{
+  JsonNode *node = member (object, name, G_TYPE_INT64);
 
-  first_len = strlen (first_header);
-  lines = g_strsplit (text, "\n", 0);
+  if (node == NULL)
+    return FALSE;
 
-  for (guint i = 0; lines[i]; i++)
+  *value = json_node_get_int (node);
+
+  return TRUE;
+}
+
+static JsonArray *
+member_array (JsonObject *object,
+              const char *name)
+{
+  JsonNode *node;
+
+  if (object == NULL ||
+      !json_object_has_member (object, name) ||
+      !(node = json_object_get_member (object, name)) ||
+      !JSON_NODE_HOLDS_ARRAY (node))
+    return NULL;
+
+  return json_node_get_array (node);
+}
+
+static JsonObject *
+array_object (JsonArray *array,
+              guint      index)
+{
+  JsonNode *node = json_array_get_element (array, index);
+
+  return node && JSON_NODE_HOLDS_OBJECT (node) ? json_node_get_object (node) : NULL;
+}
+
+/* Parses @json and returns its root object and the array @name in it. */
+static JsonObject *
+parse_document (JsonParser  *parser,
+                const char  *json,
+                const char  *name,
+                JsonArray  **array,
+                GError     **error)
+{
+  JsonNode *root;
+  JsonObject *object;
+
+  if (json == NULL)
+    json = "";
+
+  if (!json_parser_load_from_data (parser, json, -1, error))
+    return NULL;
+
+  if (!(root = json_parser_get_root (parser)) ||
+      !JSON_NODE_HOLDS_OBJECT (root) ||
+      !(object = json_node_get_object (root)) ||
+      !(*array = member_array (object, name)))
     {
-      const char *line = lines[i];
-
-      if (offsets == NULL)
-        {
-          if (strncmp (line, first_header, first_len) == 0 &&
-              (line[first_len] == ' ' || line[first_len] == 0))
-            offsets = column_offsets (line);
-          continue;
-        }
-
-      if (line[0] == 0)
-        break;
-
-      {
-        char **cells = split_row (line, offsets);
-
-        if (validator != NULL && !validator (cells))
-          {
-            g_strfreev (cells);
-            break;
-          }
-
-        g_ptr_array_add (rows, cells);
-      }
+      g_set_error (error,
+                   G_IO_ERROR,
+                   G_IO_ERROR_INVALID_DATA,
+                   "nsl reported no \"%s\"", name);
+      return NULL;
     }
 
-  return g_steal_pointer (&rows);
+  return object;
 }
 
 gboolean
@@ -178,34 +193,40 @@ ptyxis_nsl_is_valid_name (const char *name)
   return TRUE;
 }
 
-static gboolean
-machine_row_is_valid (char **cells)
-{
-  return cells[0] != NULL && ptyxis_nsl_is_valid_name (cells[0]);
-}
-
+/**
+ * ptyxis_nsl_parse_machines:
+ * @json: the output of `nsl list --json`
+ *
+ * Returns: (transfer full) (nullable): the machines, or %NULL on error
+ */
 GPtrArray *
-ptyxis_nsl_parse_machines (const char *text)
+ptyxis_nsl_parse_machines (const char  *json,
+                           GError     **error)
 {
-  g_autoptr(GPtrArray) machines = g_ptr_array_new_with_free_func ((GDestroyNotify)ptyxis_nsl_machine_free);
-  g_autoptr(GPtrArray) rows = parse_table (text, "MACHINE", machine_row_is_valid);
+  g_autoptr(JsonParser) parser = json_parser_new ();
+  g_autoptr(GPtrArray) machines = NULL;
+  JsonArray *array = NULL;
 
-  for (guint i = 0; i < rows->len; i++)
+  if (!parse_document (parser, json, "machines", &array, error))
+    return NULL;
+
+  machines = g_ptr_array_new_with_free_func ((GDestroyNotify)ptyxis_nsl_machine_free);
+
+  for (guint i = 0; i < json_array_get_length (array); i++)
     {
-      char **cells = g_ptr_array_index (rows, i);
-      guint n_cells = g_strv_length (cells);
+      JsonObject *object = array_object (array, i);
+      const char *name = member_string (object, "name");
       PtyxisNslMachine *machine;
 
-      /* MACHINE STATE IMAGE TIER DEFAULT */
-      if (n_cells < 5)
+      if (!ptyxis_nsl_is_valid_name (name))
         continue;
 
       machine = g_new0 (PtyxisNslMachine, 1);
-      machine->name = g_strdup (cells[0]);
-      machine->state = g_strdup (cells[1]);
-      machine->image = g_strdup (cells[2]);
-      machine->tier = g_strdup (cells[3]);
-      machine->is_default = g_strcmp0 (cells[4], "*") == 0;
+      machine->name = g_strdup (name);
+      machine->state = g_strdup (member_string (object, "state"));
+      machine->image = g_strdup (member_string (object, "image"));
+      machine->tier = g_strdup (member_string (object, "tier"));
+      machine->is_default = member_boolean (object, "default");
 
       g_ptr_array_add (machines, machine);
     }
@@ -213,49 +234,54 @@ ptyxis_nsl_parse_machines (const char *text)
   return g_steal_pointer (&machines);
 }
 
-static gboolean
-image_row_is_valid (char **cells)
-{
-  return g_strcmp0 (cells[0], "vm") == 0 || g_strcmp0 (cells[0], "machine") == 0;
-}
-
+/**
+ * ptyxis_nsl_parse_images:
+ * @json: the output of `nsl images --json`
+ *
+ * Returns: (transfer full) (nullable): the machine images, or %NULL on error
+ */
 GPtrArray *
-ptyxis_nsl_parse_images (const char *text)
+ptyxis_nsl_parse_images (const char  *json,
+                         GError     **error)
 {
-  g_autoptr(GPtrArray) images = g_ptr_array_new_with_free_func ((GDestroyNotify)ptyxis_nsl_image_free);
-  g_autoptr(GPtrArray) rows = parse_table (text, "KIND", image_row_is_valid);
+  g_autoptr(JsonParser) parser = json_parser_new ();
+  g_autoptr(GPtrArray) images = NULL;
+  JsonArray *array = NULL;
 
-  for (guint i = 0; i < rows->len; i++)
+  if (!parse_document (parser, json, "images", &array, error))
+    return NULL;
+
+  images = g_ptr_array_new_with_free_func ((GDestroyNotify)ptyxis_nsl_image_free);
+
+  for (guint i = 0; i < json_array_get_length (array); i++)
     {
-      char **cells = g_ptr_array_index (rows, i);
-      g_auto(GStrv) selectors = NULL;
-      g_autoptr(GPtrArray) trimmed = NULL;
+      JsonObject *object = array_object (array, i);
+      JsonArray *selectors = member_array (object, "selectors");
+      g_autoptr(GPtrArray) strv = g_ptr_array_new_with_free_func (g_free);
       PtyxisNslImage *image;
 
-      /* KIND SELECTORS BUILD CACHED; only machine images can be created */
-      if (g_strv_length (cells) < 4 || g_strcmp0 (cells[0], "machine") != 0)
+      /* Only machine images can be created */
+      if (g_strcmp0 (member_string (object, "kind"), "machine") != 0 || selectors == NULL)
         continue;
 
-      selectors = g_strsplit (cells[1], ",", 0);
-      trimmed = g_ptr_array_new ();
-
-      for (guint j = 0; selectors[j]; j++)
+      for (guint j = 0; j < json_array_get_length (selectors); j++)
         {
-          g_strstrip (selectors[j]);
+          JsonNode *node = json_array_get_element (selectors, j);
 
-          if (selectors[j][0] != 0)
-            g_ptr_array_add (trimmed, g_strdup (selectors[j]));
+          if (JSON_NODE_HOLDS_VALUE (node) && json_node_get_value_type (node) == G_TYPE_STRING)
+            g_ptr_array_add (strv, g_strdup (json_node_get_string (node)));
         }
 
-      if (trimmed->len == 0)
+      if (strv->len == 0)
         continue;
 
-      g_ptr_array_add (trimmed, NULL);
+      g_ptr_array_add (strv, NULL);
 
       image = g_new0 (PtyxisNslImage, 1);
-      image->selectors = (char **)g_ptr_array_free (g_steal_pointer (&trimmed), FALSE);
-      image->build = g_strdup (cells[2]);
-      image->cached = g_strcmp0 (cells[3], "yes") == 0;
+      image->selectors = (char **)g_ptr_array_free (g_steal_pointer (&strv), FALSE);
+      image->build = g_strdup (member_string (object, "build"));
+      image->manifest = g_strdup (member_string (object, "manifest"));
+      image->cached = member_boolean (object, "cached");
 
       g_ptr_array_add (images, image);
     }
@@ -263,69 +289,110 @@ ptyxis_nsl_parse_images (const char *text)
   return g_steal_pointer (&images);
 }
 
-static gboolean
-setting_row_is_valid (char **cells)
-{
-  const char *key = cells[0];
-  const char *dot;
-
-  if (key == NULL || !(dot = strchr (key, '.')) || dot == key || dot[1] == 0)
-    return FALSE;
-
-  for (const char *c = key; *c; c++)
-    {
-      if (!g_ascii_islower (*c) && *c != '_' && *c != '.')
-        return FALSE;
-    }
-
-  return TRUE;
-}
-
+/**
+ * ptyxis_nsl_parse_config:
+ * @json: the output of `nsl config --json`
+ * @path: (out) (optional): the configuration file
+ *
+ * Returns: (transfer full) (nullable): the settings, or %NULL on error
+ */
 GPtrArray *
-ptyxis_nsl_parse_config (const char  *text,
-                         char       **path)
+ptyxis_nsl_parse_config (const char  *json,
+                         char       **path,
+                         GError     **error)
 {
-  g_autoptr(GPtrArray) settings = g_ptr_array_new_with_free_func ((GDestroyNotify)ptyxis_nsl_setting_free);
-  g_autoptr(GPtrArray) rows = parse_table (text, "SETTING", setting_row_is_valid);
+  g_autoptr(JsonParser) parser = json_parser_new ();
+  g_autoptr(GPtrArray) settings = NULL;
+  JsonObject *root;
+  JsonArray *array = NULL;
 
   if (path != NULL)
+    *path = NULL;
+
+  if (!(root = parse_document (parser, json, "settings", &array, error)))
+    return NULL;
+
+  settings = g_ptr_array_new_with_free_func ((GDestroyNotify)ptyxis_nsl_setting_free);
+
+  for (guint i = 0; i < json_array_get_length (array); i++)
     {
-      static const char prefix[] = "Configuration file: ";
-      const char *line = text ? strstr (text, prefix) : NULL;
-
-      *path = NULL;
-
-      if (line != NULL)
-        {
-          const char *begin = line + strlen (prefix);
-          const char *end = strchr (begin, '\n');
-          g_autofree char *value = end ? g_strndup (begin, end - begin) : g_strdup (begin);
-
-          if (g_str_has_suffix (value, " (absent)"))
-            value[strlen (value) - strlen (" (absent)")] = 0;
-
-          *path = g_steal_pointer (&value);
-        }
-    }
-
-  for (guint i = 0; i < rows->len; i++)
-    {
-      char **cells = g_ptr_array_index (rows, i);
+      JsonObject *object = array_object (array, i);
+      const char *key = member_string (object, "key");
       PtyxisNslSetting *setting;
+      JsonNode *value;
+      gint64 n;
 
-      /* SETTING VALUE SOURCE */
-      if (g_strv_length (cells) < 3)
+      if (key == NULL || object == NULL || !json_object_has_member (object, "value"))
         continue;
 
       setting = g_new0 (PtyxisNslSetting, 1);
-      setting->key = g_strdup (cells[0]);
-      setting->value = g_strdup (cells[1]);
-      setting->source = g_strdup (cells[2]);
+      setting->key = g_strdup (key);
+      setting->source = g_strdup (member_string (object, "source"));
+      setting->unit = g_strdup (member_string (object, "unit"));
+      setting->has_range = member_int (object, "min", &setting->min) &&
+                           member_int (object, "max", &setting->max);
+
+      value = json_object_get_member (object, "value");
+
+      if (member_int (object, "value", &n))
+        setting->value = g_strdup_printf ("%" G_GINT64_FORMAT, n);
+      else if (JSON_NODE_HOLDS_VALUE (value) && json_node_get_value_type (value) == G_TYPE_BOOLEAN)
+        setting->value = g_strdup (json_node_get_boolean (value) ? "true" : "false");
+      else
+        setting->value = g_strdup (member_string (object, "value"));
 
       g_ptr_array_add (settings, setting);
     }
 
+  if (path != NULL)
+    *path = g_strdup (member_string (root, "path"));
+
   return g_steal_pointer (&settings);
+}
+
+/**
+ * ptyxis_nsl_error_message:
+ * @output: (nullable): what a failed nsl command printed
+ * @fallback: a message for when @output says nothing
+ *
+ * Returns: (transfer full): a message for the user
+ */
+char *
+ptyxis_nsl_error_message (const char *output,
+                          const char *fallback)
+{
+  g_auto(GStrv) lines = NULL;
+  g_autofree char *copy = NULL;
+  const char *message;
+
+  if (output == NULL)
+    return g_strdup (fallback);
+
+  /* Releases before 0.8.0 reject --json with a bare usage line or as an
+   * unknown flag.
+   */
+  lines = g_strsplit (output, "\n", 0);
+
+  for (guint i = 0; lines[i]; i++)
+    {
+      const char *line = g_strstrip (lines[i]);
+
+      if (g_strcmp0 (line, "nsl: usage: list") == 0 ||
+          g_strcmp0 (line, "nsl: usage: config") == 0 ||
+          strstr (line, "flag provided but not defined: -json") != NULL)
+        return g_strdup ("This version of nsl cannot report its machines to Ptyxis. Update nsl to 0.8.0 or later.");
+    }
+
+  copy = g_strstrip (g_strdup (output));
+  message = copy;
+
+  if (g_str_has_prefix (message, "nsl: "))
+    message += strlen ("nsl: ");
+
+  if (message[0] == 0)
+    return g_strdup (fallback);
+
+  return g_strdup (message);
 }
 
 static gboolean

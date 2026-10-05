@@ -79,7 +79,10 @@ flatpak build --filesystem=home build-dir sh -c 'meson setup _build --prefix=/ap
 
 ## Requirements
 
-nsl must be installed on the host; the Flatpak does not bundle it. The agent
+nsl 0.8.0 or later must be installed on the host; the Flatpak does not bundle
+it. Ptyxis reads nsl's state through `--json`, which 0.8.0 introduced; with an
+older nsl, machines still open from the New Tab menu, but the Machines page
+asks you to update. The agent
 looks for it on `PATH`, then in `~/.local/bin`, `/home/linuxbrew/.linuxbrew/bin`,
 `~/.linuxbrew/bin`, `/usr/local/bin` and `/usr/bin`, because a session started
 through `flatpak-spawn` often has a minimal `PATH`. The page's *Check Again*
@@ -91,7 +94,7 @@ Ptyxis runs `ptyxis-agent` on the host, outside the Flatpak sandbox, and talks
 to it over a private D-Bus connection. This fork adds to the agent:
 
 - `PtyxisNslProvider` (`agent/ptyxis-nsl-provider.c`) exports a container,
-  `nsl:NAME`, for every machine `nsl list` reports, except incomplete machines
+  `nsl:NAME`, for every machine `nsl list --json` reports, except incomplete machines
   and machines being removed. It reads machine names from `NSL_HOME/machines`
   at startup, so restored sessions find their machines before `nsl list`
   finishes. It reloads when nsl changes its records, its default machine or a
@@ -122,10 +125,12 @@ The directory a new tab starts in follows nsl's rules:
 Links clicked in a machine tab that point below `/mnt/host` open the host
 file they name.
 
-nsl prints tables for people rather than JSON, so `agent/ptyxis-nsl.c` splits
-`nsl list`, `nsl images` and `nsl config` at the column offsets of each header
-(`testsuite/test-nsl.c` covers real output). A `--json` option in nsl would
-make this contract explicit.
+`agent/ptyxis-nsl.c` reads the documents `nsl list --json`, `nsl images --json`
+and `nsl config --json` print, as nsl's
+[CLI contract](https://github.com/frostyard/nsl/blob/main/docs/specs/cli.md#machine-readable-output)
+defines them ([nsl ADR-0021](https://github.com/frostyard/nsl/blob/main/docs/adr/0021-machine-readable-output.md)).
+It ignores fields it does not know, and `testsuite/test-nsl.c` covers real
+output. The *Resources* rows take their ranges from `config --json`.
 
 ## Known limitations
 

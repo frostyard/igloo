@@ -236,7 +236,7 @@
     <!--
       List:
 
-      Machines as reported by `nsl list`. Each dictionary contains
+      Machines from the JSON output of `nsl list`. Each dictionary contains
       "name" (s), "state" (s), "image" (s), "tier" (s) and "default" (b).
     -->
     <method name="List">
@@ -247,8 +247,8 @@
       ListImages:
       @refresh: check the registry instead of using a recent catalogue
 
-      Machine images from `nsl images`. Each dictionary contains
-      "selectors" (as), "build" (s) and "cached" (b).
+      Machine images from the JSON output of `nsl images`. Each dictionary contains
+      "selectors" (as), "build" (s), "manifest" (s) and "cached" (b).
     -->
     <method name="ListImages">
       <arg name="refresh" direction="in" type="b"/>
@@ -258,9 +258,10 @@
     <!--
       GetConfig:
 
-      The effective configuration from `nsl config`. @path is the
+      The effective configuration from the JSON output of `nsl config`. @path is the
       configuration file. Each dictionary contains "key" (s, such as
-      "vm.memory"), "value" (s) and "source" (s).
+      "vm.memory"), "value" (s) and "source" (s); numbers also have "min"
+      (x), "max" (x) and "unit" (s).
     -->
     <method name="GetConfig">
       <arg name="path" direction="out" type="s"/>

@@ -304,8 +304,18 @@ ptyxis_machines_page_set_machines (PtyxisMachinesPage *self,
   if (machines != NULL)
     self->machines = g_variant_ref_sink (machines);
 
-  /* The placeholder is a child too, so let GtkListBox pick out the rows */
-  gtk_list_box_remove_all (self->machines_list_box);
+  /* Remove only rows: the placeholder is a child of the list too, and
+   * gtk_list_box_remove_all() would remove it as well.
+   */
+  for (GtkWidget *child = gtk_widget_get_first_child (GTK_WIDGET (self->machines_list_box)); child != NULL;)
+    {
+      GtkWidget *next = gtk_widget_get_next_sibling (child);
+
+      if (GTK_IS_LIST_BOX_ROW (child))
+        gtk_list_box_remove (self->machines_list_box, child);
+
+      child = next;
+    }
 
   if (self->machines == NULL)
     return;
@@ -372,6 +382,16 @@ ptyxis_machines_page_reload_machines (PtyxisMachinesPage *self)
 }
 
 static void
+ptyxis_machines_page_set_settings_sensitive (PtyxisMachinesPage *self,
+                                             gboolean            sensitive)
+{
+  for (guint i = 0; i < G_N_ELEMENTS (settings_map); i++)
+    gtk_widget_set_sensitive (setting_widget (self, i), sensitive);
+
+  gtk_widget_action_set_enabled (GTK_WIDGET (self), "machines.reset-settings", sensitive);
+}
+
+static void
 ptyxis_machines_page_get_config_cb (GObject      *object,
                                     GAsyncResult *result,
                                     gpointer      user_data)
@@ -395,11 +415,15 @@ ptyxis_machines_page_get_config_cb (GObject      *object,
           g_dbus_error_strip_remote_error (error);
           description = g_strdup_printf (_("nsl could not read its configuration: %s"), error->message);
           adw_preferences_group_set_description (self->settings_group, description);
+
+          /* The rows would show placeholders as if they were settings */
+          ptyxis_machines_page_set_settings_sensitive (self, FALSE);
         }
 
       return;
     }
 
+  ptyxis_machines_page_set_settings_sensitive (self, TRUE);
   self->loading_settings = TRUE;
 
   g_variant_iter_init (&iter, settings);
@@ -423,7 +447,21 @@ ptyxis_machines_page_get_config_cb (GObject      *object,
               widget = setting_widget (self, i);
 
               if (ADW_IS_SPIN_ROW (widget))
-                adw_spin_row_set_value (ADW_SPIN_ROW (widget), g_ascii_strtod (value, NULL));
+                {
+                  GtkAdjustment *adjustment = adw_spin_row_get_adjustment (ADW_SPIN_ROW (widget));
+                  gint64 lower, upper;
+
+                  /* nsl reports the range it accepts for each number */
+                  if (g_variant_lookup (dict, "min", "x", &lower) &&
+                      g_variant_lookup (dict, "max", "x", &upper) &&
+                      lower <= upper)
+                    {
+                      gtk_adjustment_set_lower (adjustment, lower);
+                      gtk_adjustment_set_upper (adjustment, upper);
+                    }
+
+                  adw_spin_row_set_value (ADW_SPIN_ROW (widget), g_ascii_strtod (value, NULL));
+                }
               else if (ADW_IS_SWITCH_ROW (widget))
                 adw_switch_row_set_active (ADW_SWITCH_ROW (widget), g_strcmp0 (value, "true") == 0);
             }
@@ -1174,6 +1212,9 @@ ptyxis_machines_page_init (PtyxisMachinesPage *self)
   self->pending_settings = g_hash_table_new_full (g_str_hash, g_str_equal, NULL, g_free);
 
   gtk_widget_init_template (GTK_WIDGET (self));
+
+  /* Enabled once nsl's configuration has been read */
+  ptyxis_machines_page_set_settings_sensitive (self, FALSE);
 
   for (guint i = 0; i < G_N_ELEMENTS (settings_map); i++)
     {

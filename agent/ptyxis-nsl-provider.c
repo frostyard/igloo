@@ -197,15 +197,18 @@ ptyxis_nsl_provider_list_cb (GObject      *object,
 
   if (!g_subprocess_get_successful (subprocess))
     {
-      g_task_return_new_error (task,
-                               G_IO_ERROR,
-                               G_IO_ERROR_FAILED,
-                               "%s",
-                               stderr_buf && stderr_buf[0] ? g_strstrip (stderr_buf) : "nsl list failed");
+      g_autofree char *message = ptyxis_nsl_error_message (stderr_buf, "nsl list failed");
+
+      g_task_return_new_error (task, G_IO_ERROR, G_IO_ERROR_FAILED, "%s", message);
       return;
     }
 
-  machines = ptyxis_nsl_parse_machines (stdout_buf);
+  if (!(machines = ptyxis_nsl_parse_machines (stdout_buf, &error)))
+    {
+      g_task_return_error (task, g_steal_pointer (&error));
+      return;
+    }
+
   ptyxis_nsl_provider_merge (self, machines);
 
   g_task_return_pointer (task, g_steal_pointer (&machines), (GDestroyNotify)g_ptr_array_unref);
@@ -242,6 +245,7 @@ ptyxis_nsl_provider_list_async (PtyxisNslProvider   *self,
   ptyxis_run_context_set_cwd (run_context, g_get_home_dir ());
   ptyxis_run_context_append_argv (run_context, self->nsl_path);
   ptyxis_run_context_append_argv (run_context, "list");
+  ptyxis_run_context_append_argv (run_context, "--json");
 
   if (!(subprocess = ptyxis_run_context_spawn_with_flags (run_context,
                                                           (G_SUBPROCESS_FLAGS_STDOUT_PIPE |

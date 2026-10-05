@@ -40,14 +40,19 @@ typedef struct _PtyxisNslImage
 {
   char     **selectors;
   char      *build;
+  char      *manifest;
   gboolean   cached;
 } PtyxisNslImage;
 
 typedef struct _PtyxisNslSetting
 {
-  char *key;
-  char *value;
-  char *source;
+  char   *key;
+  char   *value;
+  char   *source;
+  char   *unit;
+  gint64  min;
+  gint64  max;
+  guint   has_range : 1;
 } PtyxisNslSetting;
 
 void       ptyxis_nsl_machine_free         (PtyxisNslMachine  *machine);
@@ -56,10 +61,15 @@ void       ptyxis_nsl_setting_free         (PtyxisNslSetting  *setting);
 char      *ptyxis_nsl_find_program         (void);
 char      *ptyxis_nsl_dup_home             (void);
 gboolean   ptyxis_nsl_is_valid_name        (const char        *name);
-GPtrArray *ptyxis_nsl_parse_machines       (const char        *text);
-GPtrArray *ptyxis_nsl_parse_images         (const char        *text);
-GPtrArray *ptyxis_nsl_parse_config         (const char        *text,
-                                            char             **path);
+GPtrArray *ptyxis_nsl_parse_machines       (const char        *json,
+                                            GError           **error);
+GPtrArray *ptyxis_nsl_parse_images         (const char        *json,
+                                            GError           **error);
+GPtrArray *ptyxis_nsl_parse_config         (const char        *json,
+                                            char             **path,
+                                            GError           **error);
+char      *ptyxis_nsl_error_message        (const char        *output,
+                                            const char        *fallback);
 char      *ptyxis_nsl_translate_directory  (const char        *directory);
 char      *ptyxis_nsl_translate_uri        (const char        *uri);
 

@@ -1,0 +1,15 @@
+{
+  "vms": [
+    {"name": "shared", "role": "shared", "state": "running", "image": "nsl-vm-trixie-x86-64-r9",
+     "cpus": 8, "memory_gib": 16, "data_disk_gib": 128, "pending": ["VM image sha256:0123456789ab"]},
+    {"name": "sandbox", "role": "isolated", "state": "stopped", "image": "nsl-vm-trixie-x86-64-r9",
+     "data_disk_gib": 32, "pending": []}
+  ],
+  "machines": [
+    {"name": "trixie", "state": "running", "image": "nsl-machine-debian-trixie-x86-64-r4", "tier": "shared", "default": true},
+    {"name": "imported", "state": "stopped", "image": "", "tier": "shared", "default": false},
+    {"name": "sandbox", "state": "stopped", "image": "nsl-machine-fedora-44-x86-64-r4", "tier": "isolated", "default": false},
+    {"name": "broken", "state": "incomplete", "image": "nsl-machine-fedora-44-x86-64-r4", "tier": "shared", "default": false},
+    {"name": "gone", "state": "removing", "image": "", "tier": "", "default": false, "future_field": {"ignored": true}}
+  ]
+}

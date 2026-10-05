@@ -53,10 +53,12 @@ machine_at (GPtrArray *machines,
 static void
 test_nsl_list (void)
 {
-  g_autofree char *text = load ("list.txt");
-  g_autoptr(GPtrArray) machines = ptyxis_nsl_parse_machines (text);
+  g_autofree char *json = load ("list.json");
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GPtrArray) machines = ptyxis_nsl_parse_machines (json, &error);
   const PtyxisNslMachine *m;
 
+  g_assert_no_error (error);
   g_assert_cmpuint (machines->len, ==, 1);
 
   m = machine_at (machines, 0);
@@ -70,10 +72,12 @@ test_nsl_list (void)
 static void
 test_nsl_list_mixed (void)
 {
-  g_autofree char *text = load ("list-mixed.txt");
-  g_autoptr(GPtrArray) machines = ptyxis_nsl_parse_machines (text);
+  g_autofree char *json = load ("list-mixed.json");
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GPtrArray) machines = ptyxis_nsl_parse_machines (json, &error);
   const PtyxisNslMachine *m;
 
+  g_assert_no_error (error);
   g_assert_cmpuint (machines->len, ==, 5);
 
   m = machine_at (machines, 0);
@@ -95,7 +99,7 @@ test_nsl_list_mixed (void)
   m = machine_at (machines, 3);
   g_assert_cmpstr (m->state, ==, "incomplete");
 
-  /* Rows being removed have empty trailing cells */
+  /* Machines being removed have no image or tier; unknown fields are ignored */
   m = machine_at (machines, 4);
   g_assert_cmpstr (m->name, ==, "gone");
   g_assert_cmpstr (m->state, ==, "removing");
@@ -104,23 +108,42 @@ test_nsl_list_mixed (void)
 }
 
 static void
-test_nsl_list_empty (void)
+test_nsl_list_invalid (void)
 {
-  g_autoptr(GPtrArray) none = ptyxis_nsl_parse_machines ("No nsl VM yet\n");
-  g_autoptr(GPtrArray) no_machines = ptyxis_nsl_parse_machines ("No machines; create one with nsl create NAME --distro DISTRO:RELEASE\n");
-  g_autoptr(GPtrArray) null_text = ptyxis_nsl_parse_machines (NULL);
+  const char *documents[] = {
+    "",
+    "not json",
+    "[]",
+    "{\"vms\": []}",
+    "{\"machines\": {}}",
+  };
+  g_autoptr(GPtrArray) empty = NULL;
+  g_autoptr(GError) error = NULL;
 
-  g_assert_cmpuint (none->len, ==, 0);
-  g_assert_cmpuint (no_machines->len, ==, 0);
-  g_assert_cmpuint (null_text->len, ==, 0);
+  for (guint i = 0; i < G_N_ELEMENTS (documents); i++)
+    {
+      g_autoptr(GError) local_error = NULL;
+      g_autoptr(GPtrArray) machines = ptyxis_nsl_parse_machines (documents[i], &local_error);
+
+      g_assert_null (machines);
+      g_assert_nonnull (local_error);
+    }
+
+  /* Rows with invalid names are skipped rather than trusted */
+  empty = ptyxis_nsl_parse_machines ("{\"machines\": [{\"name\": \"../x\"}, 7, {}]}", &error);
+  g_assert_no_error (error);
+  g_assert_cmpuint (empty->len, ==, 0);
 }
 
 static void
 test_nsl_images (void)
 {
-  g_autofree char *text = load ("images.txt");
-  g_autoptr(GPtrArray) images = ptyxis_nsl_parse_images (text);
+  g_autofree char *json = load ("images.json");
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GPtrArray) images = ptyxis_nsl_parse_images (json, &error);
   const PtyxisNslImage *image;
+
+  g_assert_no_error (error);
 
   /* The VM image is skipped */
   g_assert_cmpuint (images->len, ==, 7);
@@ -130,7 +153,7 @@ test_nsl_images (void)
   g_assert_cmpstr (image->selectors[0], ==, "debian:trixie");
   g_assert_cmpstr (image->selectors[1], ==, "debian:13");
   g_assert_cmpstr (image->build, ==, "nsl-machine-debian-trixie-x86-64-r4");
-  g_assert_true (image->cached);
+  g_assert_true (g_str_has_prefix (image->manifest, "sha256:"));
 
   image = g_ptr_array_index (images, 1);
   g_assert_cmpuint (g_strv_length (image->selectors), ==, 1);
@@ -139,42 +162,92 @@ test_nsl_images (void)
   image = g_ptr_array_index (images, 3);
   g_assert_cmpstr (image->selectors[0], ==, "opensuse:tumbleweed");
   g_assert_cmpstr (image->selectors[1], ==, "opensuse-tumbleweed:rolling");
-  g_assert_false (image->cached);
 }
 
 static void
 test_nsl_config (void)
 {
-  g_autofree char *text = load ("config.txt");
+  g_autofree char *json = load ("config.json");
   g_autofree char *path = NULL;
-  g_autoptr(GPtrArray) settings = ptyxis_nsl_parse_config (text, &path);
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GPtrArray) settings = ptyxis_nsl_parse_config (json, &path, &error);
   const PtyxisNslSetting *setting;
 
+  g_assert_no_error (error);
   g_assert_true (g_str_has_suffix (path, "/.config/nsl/nsl.conf"));
   g_assert_cmpuint (settings->len, ==, 6);
 
   setting = g_ptr_array_index (settings, 0);
   g_assert_cmpstr (setting->key, ==, "vm.memory");
-  g_assert_cmpstr (setting->source, ==, "default (half of host memory)");
+  g_assert_cmpstr (setting->source, ==, "default");
+  g_assert_cmpstr (setting->unit, ==, "GiB");
+  g_assert_true (setting->has_range);
+  g_assert_cmpint (setting->min, ==, 1);
+  g_assert_cmpint (setting->max, ==, 128);
+
+  setting = g_ptr_array_index (settings, 2);
+  g_assert_cmpstr (setting->key, ==, "machines.autostart");
+  g_assert_cmpstr (setting->value, ==, "true");
+  g_assert_false (setting->has_range);
+  g_assert_null (setting->unit);
 }
 
 static void
 test_nsl_config_file (void)
 {
-  g_autofree char *text = load ("config-file.txt");
+  g_autofree char *json = load ("config-file.json");
   g_autofree char *path = NULL;
-  g_autoptr(GPtrArray) settings = ptyxis_nsl_parse_config (text, &path);
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GPtrArray) settings = ptyxis_nsl_parse_config (json, &path, &error);
   const PtyxisNslSetting *setting;
 
+  g_assert_no_error (error);
   g_assert_cmpstr (path, ==, "/home/u/.config/nsl/nsl.conf");
-
-  /* The pending line after the table is not a setting */
   g_assert_cmpuint (settings->len, ==, 6);
 
+  setting = g_ptr_array_index (settings, 2);
+  g_assert_cmpstr (setting->key, ==, "machines.autostart");
+  g_assert_cmpstr (setting->value, ==, "false");
+  g_assert_cmpstr (setting->source, ==, "file");
+
+  /* A minimum of zero is a range like any other */
   setting = g_ptr_array_index (settings, 3);
   g_assert_cmpstr (setting->key, ==, "machines.idle_timeout");
   g_assert_cmpstr (setting->value, ==, "0");
-  g_assert_cmpstr (setting->source, ==, "file line 7");
+  g_assert_true (setting->has_range);
+  g_assert_cmpint (setting->min, ==, 0);
+  g_assert_cmpint (setting->max, ==, 1440);
+}
+
+static void
+test_nsl_error_message (void)
+{
+  struct {
+    const char *output;
+    const char *expected;
+  } cases[] = {
+    { "nsl: no machine named ghost; see nsl list\n", "no machine named ghost; see nsl list" },
+    { "", "fallback" },
+    { NULL, "fallback" },
+  };
+  const char *old[] = {
+    "nsl: usage: list\n",
+    "nsl: usage: config\n",
+    "flag provided but not defined: -json\nUsage of images:\n  -offline\n\nnsl: flag provided but not defined: -json\n",
+  };
+
+  for (guint i = 0; i < G_N_ELEMENTS (cases); i++)
+    {
+      g_autofree char *message = ptyxis_nsl_error_message (cases[i].output, "fallback");
+      g_assert_cmpstr (message, ==, cases[i].expected);
+    }
+
+  /* nsl releases without --json are told apart from other failures */
+  for (guint i = 0; i < G_N_ELEMENTS (old); i++)
+    {
+      g_autofree char *message = ptyxis_nsl_error_message (old[i], "fallback");
+      g_assert_nonnull (strstr (message, "Update nsl"));
+    }
 }
 
 static void
@@ -354,10 +427,11 @@ main (int argc,
   g_test_init (&argc, &argv, NULL);
   g_test_add_func ("/Ptyxis/Nsl/list", test_nsl_list);
   g_test_add_func ("/Ptyxis/Nsl/list-mixed", test_nsl_list_mixed);
-  g_test_add_func ("/Ptyxis/Nsl/list-empty", test_nsl_list_empty);
+  g_test_add_func ("/Ptyxis/Nsl/list-invalid", test_nsl_list_invalid);
   g_test_add_func ("/Ptyxis/Nsl/images", test_nsl_images);
   g_test_add_func ("/Ptyxis/Nsl/config", test_nsl_config);
   g_test_add_func ("/Ptyxis/Nsl/config-file", test_nsl_config_file);
+  g_test_add_func ("/Ptyxis/Nsl/error-message", test_nsl_error_message);
   g_test_add_func ("/Ptyxis/Nsl/names", test_nsl_names);
   g_test_add_func ("/Ptyxis/Nsl/translate-uri", test_nsl_translate_uri);
   g_test_add_func ("/Ptyxis/Nsl/translate-directory", test_nsl_translate_directory);

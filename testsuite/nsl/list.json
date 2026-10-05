@@ -1,0 +1,21 @@
+{
+  "vms": [
+    {
+      "name": "shared",
+      "role": "shared",
+      "state": "stopped",
+      "image": "nsl-vm-trixie-x86-64-r9",
+      "data_disk_gib": 128,
+      "pending": []
+    }
+  ],
+  "machines": [
+    {
+      "name": "trixie",
+      "state": "stopped",
+      "image": "nsl-machine-debian-trixie-x86-64-r4",
+      "tier": "shared",
+      "default": true
+    }
+  ]
+}

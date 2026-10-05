@@ -1,0 +1,13 @@
+{
+  "path": "/home/u/.config/nsl/nsl.conf",
+  "present": true,
+  "settings": [
+    {"key": "vm.memory", "value": 16, "min": 1, "max": 128, "unit": "GiB", "source": "file", "line": 3},
+    {"key": "vm.cpus", "value": 8, "min": 1, "max": 64, "unit": "CPUs", "source": "file", "line": 4},
+    {"key": "machines.autostart", "value": false, "source": "file", "line": 7},
+    {"key": "machines.idle_timeout", "value": 0, "min": 0, "max": 1440, "unit": "minutes", "source": "file", "line": 8},
+    {"key": "isolated.memory", "value": 2, "min": 1, "max": 128, "unit": "GiB", "source": "default"},
+    {"key": "isolated.cpus", "value": 2, "min": 1, "max": 64, "unit": "CPUs", "source": "default"}
+  ],
+  "pending": [{"vm": "shared", "change": "vm.memory 16 GiB (running with 29)"}]
+}

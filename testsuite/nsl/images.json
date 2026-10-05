@@ -1,0 +1,88 @@
+{
+  "catalogue": {
+    "sequence": 14,
+    "expires": "2026-11-04T13:09:26Z"
+  },
+  "images": [
+    {
+      "kind": "vm",
+      "selectors": [],
+      "build": "nsl-vm-trixie-x86-64-r10",
+      "manifest": "sha256:a9a01f57f6271170fd7d735443014bb0ebb956ec97044a68118e27275e13673e",
+      "cached": false
+    },
+    {
+      "kind": "machine",
+      "selectors": [
+        "debian:trixie",
+        "debian:13"
+      ],
+      "build": "nsl-machine-debian-trixie-x86-64-r4",
+      "manifest": "sha256:651287dab6dec16e61c84909574952fc1117357778f0aa73d8ab8719b287e10d",
+      "cached": false
+    },
+    {
+      "kind": "machine",
+      "selectors": [
+        "fedora:44"
+      ],
+      "build": "nsl-machine-fedora-44-x86-64-r4",
+      "manifest": "sha256:cdd5f7e1652da4cf88cec6762cff3a21cd8f055f538e6bed4814ad80f3252833",
+      "cached": false
+    },
+    {
+      "kind": "machine",
+      "selectors": [
+        "arch:rolling",
+        "arch:btw"
+      ],
+      "build": "nsl-machine-arch-rolling-x86-64-r5",
+      "manifest": "sha256:6ecbfbdb7458dde12b95eafdb1223537e0b4088c8e31cba80967ed6bb9ca6429",
+      "cached": false
+    },
+    {
+      "kind": "machine",
+      "selectors": [
+        "opensuse:tumbleweed",
+        "opensuse-tumbleweed:rolling"
+      ],
+      "build": "nsl-machine-opensuse-tumbleweed-x86-64-r5",
+      "manifest": "sha256:c09ccb631429fe6e9314970748e7ab9f176ba5e652e4080cdcc665509257f6b0",
+      "cached": false
+    },
+    {
+      "kind": "machine",
+      "selectors": [
+        "ubuntu:resolute",
+        "ubuntu:26.04"
+      ],
+      "build": "nsl-machine-ubuntu-resolute-x86-64-r1",
+      "manifest": "sha256:7067433cc713d4f28f25d10b7d3fb01c57d08cec8e6dc4284ce162cf83bee099",
+      "cached": false
+    },
+    {
+      "kind": "machine",
+      "selectors": [
+        "centos:10",
+        "centos-stream:10"
+      ],
+      "build": "nsl-machine-centos-10-x86-64-r1",
+      "manifest": "sha256:256e3c161f216729657fa996692e31d5ca0e68fa5614f791e88f28d5e4e9cd51",
+      "cached": false
+    },
+    {
+      "kind": "machine",
+      "selectors": [
+        "opensuse:16.0",
+        "opensuse-leap:16.0"
+      ],
+      "build": "nsl-machine-opensuse-16.0-x86-64-r2",
+      "manifest": "sha256:46e653018c287c4f5720720a84f4dc793ffb6fceeb5ccf762745ee7fa54c27b1",
+      "cached": false
+    }
+  ],
+  "vm_image": {
+    "image": "nsl-vm-trixie-x86-64-r9",
+    "pending": false
+  }
+}

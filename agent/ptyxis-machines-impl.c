@@ -69,29 +69,6 @@ return_if_missing (PtyxisMachinesImpl    *self,
   return TRUE;
 }
 
-static char *
-error_from_output (const char *output,
-                   const char *fallback)
-{
-  g_autofree char *copy = NULL;
-  const char *message;
-
-  if (output == NULL)
-    return g_strdup (fallback);
-
-  copy = g_strstrip (g_strdup (output));
-  message = copy;
-
-  /* nsl reports "nsl: message" */
-  if (g_str_has_prefix (message, "nsl: "))
-    message += strlen ("nsl: ");
-
-  if (message[0] == 0)
-    return g_strdup (fallback);
-
-  return g_strdup (message);
-}
-
 static void
 ptyxis_machines_impl_version_cb (GObject      *object,
                                  GAsyncResult *result,
@@ -231,10 +208,12 @@ ptyxis_machines_impl_handle_list (PtyxisIpcMachines     *machines,
   return TRUE;
 }
 
+/* @errors is nsl's stderr, or %NULL when it was merged into @output */
 typedef void (*OutputHandler) (PtyxisIpcMachines     *self,
                                GDBusMethodInvocation *invocation,
                                GSubprocess           *subprocess,
-                               const char            *output);
+                               const char            *output,
+                               const char            *errors);
 
 typedef struct
 {
@@ -260,23 +239,27 @@ communicate_cb (GObject      *object,
   Communicate *state = user_data;
   g_autoptr(GError) error = NULL;
   g_autofree char *output = NULL;
+  g_autofree char *errors = NULL;
 
   g_assert (G_IS_SUBPROCESS (subprocess));
   g_assert (state != NULL);
 
-  if (!g_subprocess_communicate_utf8_finish (subprocess, result, &output, NULL, &error))
+  if (!g_subprocess_communicate_utf8_finish (subprocess, result, &output, &errors, &error))
     g_dbus_method_invocation_return_gerror (g_steal_pointer (&state->invocation), error);
   else
-    state->handler (state->self, g_steal_pointer (&state->invocation), subprocess, output);
+    state->handler (state->self, g_steal_pointer (&state->invocation), subprocess, output, errors);
 
   communicate_free (state);
 }
 
-/* Runs nsl with @args, merging stderr into the output given to @handler */
+/* Runs nsl with @args. JSON output keeps stderr apart so that a warning
+ * cannot corrupt the document; other output merges it for error messages.
+ */
 static void
 run_nsl (PtyxisMachinesImpl    *self,
          GDBusMethodInvocation *invocation,
          const char * const    *args,
+         gboolean               json,
          OutputHandler          handler)
 {
   g_autoptr(PtyxisRunContext) run_context = nsl_run_context (self);
@@ -290,7 +273,8 @@ run_nsl (PtyxisMachinesImpl    *self,
   if (!(subprocess = ptyxis_run_context_spawn_with_flags (run_context,
                                                           (G_SUBPROCESS_FLAGS_STDIN_PIPE |
                                                            G_SUBPROCESS_FLAGS_STDOUT_PIPE |
-                                                           G_SUBPROCESS_FLAGS_STDERR_MERGE),
+                                                           (json ? G_SUBPROCESS_FLAGS_STDERR_PIPE
+                                                                 : G_SUBPROCESS_FLAGS_STDERR_MERGE)),
                                                           &error)))
     {
       g_dbus_method_invocation_return_gerror (invocation, error);
@@ -321,19 +305,25 @@ static void
 images_output (PtyxisIpcMachines     *self,
                GDBusMethodInvocation *invocation,
                GSubprocess           *subprocess,
-               const char            *output)
+               const char            *output,
+               const char            *errors)
 {
   g_autoptr(GPtrArray) images = NULL;
+  g_autoptr(GError) error = NULL;
   GVariantBuilder builder;
 
   if (!g_subprocess_get_successful (subprocess))
     {
-      g_autofree char *message = error_from_output (output, "Failed to list machine images");
+      g_autofree char *message = ptyxis_nsl_error_message (errors, "Failed to list machine images");
       g_dbus_method_invocation_return_error_literal (invocation, G_IO_ERROR, G_IO_ERROR_FAILED, message);
       return;
     }
 
-  images = ptyxis_nsl_parse_images (output);
+  if (!(images = ptyxis_nsl_parse_images (output, &error)))
+    {
+      g_dbus_method_invocation_return_gerror (invocation, error);
+      return;
+    }
 
   g_variant_builder_init (&builder, G_VARIANT_TYPE ("aa{sv}"));
 
@@ -344,6 +334,7 @@ images_output (PtyxisIpcMachines     *self,
       g_variant_builder_open (&builder, G_VARIANT_TYPE ("a{sv}"));
       g_variant_builder_add (&builder, "{sv}", "selectors", g_variant_new_strv ((const char * const *)image->selectors, -1));
       g_variant_builder_add (&builder, "{sv}", "build", g_variant_new_string (image->build ? image->build : ""));
+      g_variant_builder_add (&builder, "{sv}", "manifest", g_variant_new_string (image->manifest ? image->manifest : ""));
       g_variant_builder_add (&builder, "{sv}", "cached", g_variant_new_boolean (image->cached));
       g_variant_builder_close (&builder);
     }
@@ -357,13 +348,13 @@ ptyxis_machines_impl_handle_list_images (PtyxisIpcMachines     *machines,
                                          gboolean               refresh)
 {
   PtyxisMachinesImpl *self = (PtyxisMachinesImpl *)machines;
-  const char *args[] = { "images", refresh ? "--refresh" : NULL, NULL };
+  const char *args[] = { "images", "--json", refresh ? "--refresh" : NULL, NULL };
 
   g_assert (PTYXIS_IS_MACHINES_IMPL (self));
   g_assert (G_IS_DBUS_METHOD_INVOCATION (invocation));
 
   if (!return_if_missing (self, invocation))
-    run_nsl (self, invocation, args, images_output);
+    run_nsl (self, invocation, args, TRUE, images_output);
 
   return TRUE;
 }
@@ -383,6 +374,13 @@ settings_to_variant (GPtrArray *settings)
       g_variant_builder_add (&builder, "{sv}", "key", g_variant_new_string (setting->key));
       g_variant_builder_add (&builder, "{sv}", "value", g_variant_new_string (setting->value ? setting->value : ""));
       g_variant_builder_add (&builder, "{sv}", "source", g_variant_new_string (setting->source ? setting->source : ""));
+      if (setting->has_range)
+        {
+          g_variant_builder_add (&builder, "{sv}", "min", g_variant_new_int64 (setting->min));
+          g_variant_builder_add (&builder, "{sv}", "max", g_variant_new_int64 (setting->max));
+        }
+      if (setting->unit != NULL)
+        g_variant_builder_add (&builder, "{sv}", "unit", g_variant_new_string (setting->unit));
       g_variant_builder_close (&builder);
     }
 
@@ -393,19 +391,25 @@ static void
 config_output (PtyxisIpcMachines     *self,
                GDBusMethodInvocation *invocation,
                GSubprocess           *subprocess,
-               const char            *output)
+               const char            *output,
+               const char            *errors)
 {
   g_autoptr(GPtrArray) settings = NULL;
+  g_autoptr(GError) error = NULL;
   g_autofree char *path = NULL;
 
   if (!g_subprocess_get_successful (subprocess))
     {
-      g_autofree char *message = error_from_output (output, "Failed to read the nsl configuration");
+      g_autofree char *message = ptyxis_nsl_error_message (errors, "Failed to read the nsl configuration");
       g_dbus_method_invocation_return_error_literal (invocation, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, message);
       return;
     }
 
-  settings = ptyxis_nsl_parse_config (output, &path);
+  if (!(settings = ptyxis_nsl_parse_config (output, &path, &error)))
+    {
+      g_dbus_method_invocation_return_gerror (invocation, error);
+      return;
+    }
 
   ptyxis_ipc_machines_complete_get_config (self,
                                            invocation,
@@ -418,13 +422,13 @@ ptyxis_machines_impl_handle_get_config (PtyxisIpcMachines     *machines,
                                         GDBusMethodInvocation *invocation)
 {
   PtyxisMachinesImpl *self = (PtyxisMachinesImpl *)machines;
-  static const char * const args[] = { "config", NULL };
+  static const char * const args[] = { "config", "--json", NULL };
 
   g_assert (PTYXIS_IS_MACHINES_IMPL (self));
   g_assert (G_IS_DBUS_METHOD_INVOCATION (invocation));
 
   if (!return_if_missing (self, invocation))
-    run_nsl (self, invocation, args, config_output);
+    run_nsl (self, invocation, args, TRUE, config_output);
 
   return TRUE;
 }
@@ -546,7 +550,8 @@ static void
 check_config_output (PtyxisIpcMachines     *machines,
                      GDBusMethodInvocation *invocation,
                      GSubprocess           *subprocess,
-                     const char            *output)
+                     const char            *output,
+                     const char            *errors)
 {
   Restore *restore = g_object_get_data (G_OBJECT (invocation), "NSL_RESTORE");
   g_autofree char *message = NULL;
@@ -565,7 +570,7 @@ check_config_output (PtyxisIpcMachines     *machines,
   else
     g_unlink (restore->target);
 
-  message = error_from_output (output, "nsl rejected the configuration");
+  message = ptyxis_nsl_error_message (output, "nsl rejected the configuration");
   g_dbus_method_invocation_return_error_literal (invocation, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, message);
 }
 
@@ -636,7 +641,7 @@ ptyxis_machines_impl_handle_set_config (PtyxisIpcMachines     *machines,
   restore->existed = existed;
   g_object_set_data_full (G_OBJECT (invocation), "NSL_RESTORE", restore, (GDestroyNotify)restore_free);
 
-  run_nsl (self, g_steal_pointer (&invocation), check_args, check_config_output);
+  run_nsl (self, g_steal_pointer (&invocation), check_args, FALSE, check_config_output);
 
   return TRUE;
 
@@ -650,7 +655,8 @@ static void
 run_output (PtyxisIpcMachines     *machines,
             GDBusMethodInvocation *invocation,
             GSubprocess           *subprocess,
-            const char            *output)
+            const char            *output,
+            const char            *errors)
 {
   PtyxisMachinesImpl *self = (PtyxisMachinesImpl *)machines;
 
@@ -683,7 +689,7 @@ ptyxis_machines_impl_handle_run (PtyxisIpcMachines     *machines,
     }
 
   if (!return_if_missing (self, invocation))
-    run_nsl (self, g_steal_pointer (&invocation), args, run_output);
+    run_nsl (self, g_steal_pointer (&invocation), args, FALSE, run_output);
 
   return TRUE;
 }
