@@ -14,6 +14,24 @@ Igloo is based on [Ptyxis](https://gitlab.gnome.org/chergert/ptyxis) by
 Christian Hergert, and keeps everything Ptyxis does. It installs as
 `io.github.frostyard.Igloo`, beside Ptyxis, with its own settings.
 
+## Install
+
+Igloo is published to the [Frostyard Flatpak remote](https://github.com/frostyard/flatpak-index).
+Add it once, then install Igloo and update it with `flatpak update`:
+
+```bash
+flatpak remote-add --if-not-exists frostyard https://frostyard.github.io/flatpak-index/frostyard.flatpakrepo
+```
+
+```bash
+flatpak install frostyard io.github.frostyard.Igloo
+```
+
+Igloo uses the GNOME 51 runtime from [Flathub](https://flathub.org/setup).
+Every pull request's [CI run](https://github.com/frostyard/igloo/actions/workflows/flatpak.yml)
+also keeps a bundle, `igloo-flatpak`, to try a change before it merges:
+unzip it and run `flatpak install --user igloo.flatpak`.
+
 ## What it adds to Ptyxis
 
 - **New Tab menu.** The dropdown next to the new tab button lists nsl machines
@@ -80,6 +98,11 @@ flatpak build-bundle repo igloo.flatpak io.github.frostyard.Igloo
 
 The manifest builds VTE 0.84.1 with fast_float and simdutf on top of the GNOME
 51 runtime, then builds this checkout.
+
+[CI](.github/workflows/flatpak.yml) builds the same manifest with its tests on
+every push and pull request. On `main` it also exports an OCI image with
+`flatpak build-bundle --oci` and pushes it to `ghcr.io/frostyard/igloo`, which
+the Frostyard remote serves.
 
 ### Develop inside the build environment
 

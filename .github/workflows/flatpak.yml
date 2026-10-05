@@ -1,0 +1,95 @@
+name: Flatpak
+
+# Builds the Flatpak, with its tests, on every push and pull request, and keeps
+# the bundle as an artifact. Pushes to main also publish an OCI image to
+# ghcr.io/frostyard/igloo, which the Frostyard remote serves
+# (https://github.com/frostyard/flatpak-index).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flatpak-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  APP_ID: io.github.frostyard.Igloo
+  IMAGE: ghcr.io/frostyard/igloo
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    # flatpak-builder sandboxes builds with bubblewrap, which needs a
+    # privileged container.
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Build and test
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6.8
+        with:
+          manifest-path: io.github.frostyard.Igloo.json
+          bundle: igloo.flatpak
+          artifact-name: igloo-flatpak
+          run-tests: true
+          # Dependencies such as VTE come from the cache when the manifest
+          # has not changed; Igloo itself always rebuilds.
+          cache-key: flatpak-builder-${{ hashFiles('io.github.frostyard.Igloo.json') }}
+
+      - name: Export the OCI image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: flatpak build-bundle --oci --arch=x86_64 repo igloo.oci "$APP_ID"
+
+      - name: Keep the OCI image for publishing
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: igloo-oci
+          path: igloo.oci
+          retention-days: 1
+
+  publish:
+    name: Publish
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      # Optional: a fine-grained token with Actions write access to
+      # frostyard/flatpak-index, so the remote refreshes right away instead of
+      # at its next hourly run.
+      DISPATCH_TOKEN: ${{ secrets.FLATPAK_INDEX_DISPATCH_TOKEN }}
+    steps:
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: igloo-oci
+          path: igloo.oci
+
+      - name: Push to GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          echo "$GITHUB_TOKEN" | skopeo login ghcr.io --username "$ACTOR" --password-stdin
+          # latest is what the remote serves; the commit tag keeps every build pullable.
+          for tag in latest "sha-${GITHUB_SHA::12}"; do
+            skopeo copy oci:igloo.oci "docker://$IMAGE:$tag"
+          done
+
+      - name: Refresh the Frostyard remote
+        if: env.DISPATCH_TOKEN != ''
+        env:
+          GH_TOKEN: ${{ env.DISPATCH_TOKEN }}
+        run: gh workflow run publish.yml --repo frostyard/flatpak-index
