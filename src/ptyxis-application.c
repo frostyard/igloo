@@ -1414,31 +1414,52 @@ ptyxis_application_about (GSimpleAction *action,
                           GVariant      *param,
                           gpointer       user_data)
 {
+#if APP_IS_IGLOO
+  static const char *developers[] = {"Brian Ketelsen", NULL};
+  static const char *ptyxis_developers[] = {"Christian Hergert", NULL};
+  static const char *developer_name = "Frostyard";
+  static const char *copyright = "© 2023-2024 Christian Hergert, et al.\n© 2026 Brian Ketelsen";
+#else
   static const char *developers[] = {"Christian Hergert", NULL};
+  static const char *developer_name = "Christian Hergert";
+  static const char *copyright = "© 2023-2024 Christian Hergert, et al.";
+#endif
   static const char *artists[] = {"Jakub Steiner", NULL};
   PtyxisApplication *self = user_data;
   GtkWindow *window = NULL;
   g_autofree char *debug_info = NULL;
+  AdwDialog *dialog;
 
   g_assert (PTYXIS_IS_APPLICATION (self));
 
   window = gtk_application_get_active_window (GTK_APPLICATION (self));
   debug_info = generate_debug_info (self);
 
-  adw_show_about_dialog (GTK_WIDGET (window),
-                         "application-icon", PACKAGE_ICON_NAME,
-                         "application-name", ptyxis_app_name (),
-                         "artists", artists,
-                         "copyright", "© 2023-2024 Christian Hergert, et al.",
-                         "debug-info", debug_info,
-                         "developer-name", "Christian Hergert",
-                         "developers", developers,
-                         "issue-url", "https://gitlab.gnome.org/chergert/ptyxis/issues",
-                         "license-type", GTK_LICENSE_GPL_3_0,
-                         "translator-credits", _("translator-credits"),
-                         "version", PACKAGE_VERSION,
-                         "website", "https://gitlab.gnome.org/chergert/ptyxis",
-                         NULL);
+  dialog = adw_about_dialog_new ();
+  g_object_set (dialog,
+                "application-icon", PACKAGE_ICON_NAME,
+                "application-name", ptyxis_app_name (),
+                "artists", artists,
+                "copyright", copyright,
+                "debug-info", debug_info,
+                "developer-name", developer_name,
+                "developers", developers,
+                "issue-url", PACKAGE_WEBSITE "/issues",
+                "license-type", GTK_LICENSE_GPL_3_0,
+                "translator-credits", _("translator-credits"),
+                "version", PACKAGE_VERSION,
+                "website", PACKAGE_WEBSITE,
+                NULL);
+
+#if APP_IS_IGLOO
+  /* Igloo is a fork of Ptyxis; credit it where people will look */
+  adw_about_dialog_set_comments (ADW_ABOUT_DIALOG (dialog),
+                                 _("A terminal for nsl machines and containers, based on Ptyxis by Christian Hergert."));
+  adw_about_dialog_add_credit_section (ADW_ABOUT_DIALOG (dialog), _("Ptyxis by"), ptyxis_developers);
+  adw_about_dialog_add_link (ADW_ABOUT_DIALOG (dialog), _("Ptyxis"), "https://gitlab.gnome.org/chergert/ptyxis");
+#endif
+
+  adw_dialog_present (dialog, GTK_WIDGET (window));
 }
 
 static void

@@ -380,7 +380,7 @@ ptyxis_nsl_error_message (const char *output,
       if (g_strcmp0 (line, "nsl: usage: list") == 0 ||
           g_strcmp0 (line, "nsl: usage: config") == 0 ||
           strstr (line, "flag provided but not defined: -json") != NULL)
-        return g_strdup ("This version of nsl cannot report its machines to Ptyxis. Update nsl to 0.8.0 or later.");
+        return g_strdup ("This version of nsl is too old to report its machines. Update nsl to 0.8.0 or later.");
     }
 
   copy = g_strstrip (g_strdup (output));

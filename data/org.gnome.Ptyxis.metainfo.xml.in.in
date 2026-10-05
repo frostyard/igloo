@@ -4,16 +4,16 @@
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <name>@APP_NAME@</name>
-  <summary>Container-oriented terminal with nsl machines</summary>
+  <summary>Terminal for nsl machines and containers</summary>
   <description>
     <p>
-      Ptyxis is a terminal for GNOME that focuses on ease-of-use in a
-      world of containers.
+      Igloo is a terminal for GNOME that opens nsl machines, WSL-style Linux
+      machines on atomic Linux hosts, the way it opens containers. Pick a
+      machine from the New Tab menu, or create, configure and remove machines
+      in Preferences.
     </p>
     <p>
-      This build adds nsl machines: WSL-style Linux machines on atomic Linux
-      hosts. Open a machine from the New Tab menu, and create, configure and
-      remove machines in Preferences.
+      Igloo is based on Ptyxis by Christian Hergert.
     </p>
     <p>Features:</p>
     <ul>
@@ -39,9 +39,9 @@
   <developer id="io.github.frostyard">
     <name translate="no">Frostyard</name>
   </developer>
-  <url type="homepage">https://github.com/frostyard/ptyxis</url>
-  <url type="bugtracker">https://github.com/frostyard/ptyxis/issues</url>
-  <url type="vcs-browser">https://github.com/frostyard/ptyxis</url>
+  <url type="homepage">https://github.com/frostyard/igloo</url>
+  <url type="bugtracker">https://github.com/frostyard/igloo/issues</url>
+  <url type="vcs-browser">https://github.com/frostyard/igloo</url>
   <translation type="gettext">ptyxis</translation>
   <launchable type="desktop-id">@APP_ID@.desktop</launchable>
 

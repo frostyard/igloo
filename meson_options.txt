@@ -1,6 +1,6 @@
 option('development', type: 'boolean', value: false, description: 'If this is a development build')
-option('generic', type: 'combo', value: 'ptyxis',
-       choices: ['ptyxis', 'terminal', 'builder'],
+option('generic', type: 'combo', value: 'igloo',
+       choices: ['igloo', 'ptyxis', 'terminal', 'builder'],
        description: 'How the application should be named')
 option('app-id', type: 'string', value: '', description: 'An alternate app-id to use for the application')
 option('gschema-id', type: 'string', value: '', description: 'An alternative gschema identifier prefix')

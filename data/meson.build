@@ -1,4 +1,7 @@
-if app_is_builder
+if app_is_igloo
+  app_name = 'Igloo'
+  app_comment = 'A terminal for nsl machines and containers'
+elif app_is_builder
   app_name = 'Builder Terminal'
 elif app_is_generic
   app_name = 'Terminal'
@@ -6,9 +9,14 @@ else
   app_name = 'Ptyxis'
 endif
 
+if not app_is_igloo
+  app_comment = 'A container-oriented terminal for GNOME'
+endif
+
 desktop_config = configuration_data()
 desktop_config.set('APP_ID', app_id)
 desktop_config.set('APP_NAME', app_name)
+desktop_config.set('APP_COMMENT', app_comment)
 desktop_file_in = configure_file(
           input: 'org.gnome.Ptyxis.desktop.in.in',
          output: 'org.gnome.Ptyxis.desktop.in',

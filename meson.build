@@ -12,31 +12,41 @@ gnome = import('gnome')
 app_schema_id = get_option('gschema-id')
 app_schema_path = get_option('gschema-path')
 
-app_is_generic = get_option('generic') != 'ptyxis'
+# Igloo is this fork's name; the other choices are upstream Ptyxis's.
+app_is_igloo = get_option('generic') == 'igloo'
+app_is_generic = get_option('generic') not in ['ptyxis', 'igloo']
 app_is_builder = get_option('generic') == 'builder'
 app_id = get_option('app-id')
 
+if app_is_igloo
+  default_app_id = 'io.github.frostyard.Igloo'
+  default_schema_path = '/io/github/frostyard/Igloo/'
+else
+  default_app_id = 'org.gnome.Ptyxis'
+  default_schema_path = '/org/gnome/Ptyxis/'
+endif
+
 if get_option('development')
   if app_id == ''
-    app_id = 'org.gnome.Ptyxis.Devel'
+    app_id = default_app_id + '.Devel'
   endif
   if app_schema_path == ''
-    app_schema_path = '/org/gnome/Ptyxis/Devel/'
+    app_schema_path = default_schema_path + 'Devel/'
   endif
 else
   if app_id == ''
-    app_id = 'org.gnome.Ptyxis'
+    app_id = default_app_id
   endif
   if app_schema_path == ''
-    app_schema_path = '/org/gnome/Ptyxis/'
+    app_schema_path = default_schema_path
   endif
 endif
 
 if app_schema_id == ''
   if get_option('development')
-    app_schema_id = 'org.gnome.Ptyxis.Devel'
+    app_schema_id = default_app_id + '.Devel'
   else
-    app_schema_id = 'org.gnome.Ptyxis'
+    app_schema_id = default_app_id
   endif
 endif
 
@@ -84,10 +94,16 @@ config_h.set_quoted('GETTEXT_PACKAGE', 'ptyxis')
 config_h.set_quoted('LOCALEDIR', get_option('prefix') / get_option('localedir'))
 # LIBEXECDIR must be expanded in config.h
 config_h.set_quoted('LIBEXECDIR', get_option('prefix') / get_option('libexecdir'))
-config_h.set_quoted('PACKAGE_WEBSITE', 'https://gitlab.gnome.org/chergert/ptyxis')
+if app_is_igloo
+  config_h.set_quoted('PACKAGE_WEBSITE', 'https://github.com/frostyard/igloo')
+  config_h.set_quoted('PACKAGE_NAME', 'Igloo')
+else
+  config_h.set_quoted('PACKAGE_WEBSITE', 'https://gitlab.gnome.org/chergert/ptyxis')
+  config_h.set_quoted('PACKAGE_NAME', 'Ptyxis')
+endif
 config_h.set_quoted('PACKAGE_ICON_NAME', app_id)
-config_h.set_quoted('PACKAGE_NAME', 'Ptyxis')
 config_h.set10('DEVELOPMENT_BUILD', get_option('development'))
+config_h.set10('APP_IS_IGLOO', app_is_igloo)
 config_h.set10('APP_IS_GENERIC', app_is_generic)
 config_h.set10('APP_IS_BUILDER', app_is_builder)
 

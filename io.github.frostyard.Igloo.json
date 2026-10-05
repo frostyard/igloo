@@ -1,5 +1,5 @@
 {
-    "app-id" : "io.github.frostyard.Ptyxis",
+    "app-id" : "io.github.frostyard.Igloo",
     "runtime" : "org.gnome.Platform",
     "runtime-version" : "51",
     "sdk" : "org.gnome.Sdk",
@@ -88,11 +88,8 @@
             "config-opts" : [
                 "--buildtype=release",
                 "-Ddevelopment=false",
-                "-Dgeneric=ptyxis",
-                "-Dlibc-compat=true",
-                "-Dapp-id=io.github.frostyard.Ptyxis",
-                "-Dgschema-id=io.github.frostyard.Ptyxis",
-                "-Dgschema-path=/io/github/frostyard/Ptyxis/"
+                "-Dgeneric=igloo",
+                "-Dlibc-compat=true"
             ],
             "sources" : [
                 {

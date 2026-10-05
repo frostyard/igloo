@@ -3,13 +3,16 @@ symbolicdir = join_paths(icondir, 'symbolic', 'apps')
 scalabledir = join_paths(icondir, 'scalable', 'apps')
 
 
-if app_is_generic
+if app_is_igloo
+  icon_prefix = 'igloo'
+elif app_is_generic
   icon_prefix = 'generic'
 else
   icon_prefix = 'ptyxis'
 endif
 
-if get_option('development')
+# Igloo has no separate development icon
+if get_option('development') and not app_is_igloo
   icon_prefix = '@0@-devel'.format(icon_prefix)
 endif
 

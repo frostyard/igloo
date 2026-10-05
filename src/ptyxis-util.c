@@ -321,7 +321,9 @@ ptyxis_parse_shells (const char *etc_shells)
 const char *
 ptyxis_app_name (void)
 {
-#if APP_IS_BUILDER
+#if APP_IS_IGLOO
+  return _("Igloo");
+#elif APP_IS_BUILDER
   /* translators: Builder Terminal means this is a terminal bundled with GNOME Builder */
   return _("Builder Terminal");
 #elif APP_IS_GENERIC

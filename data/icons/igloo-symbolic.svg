@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg height="16px" viewBox="0 0 16 16" width="16px" xmlns="http://www.w3.org/2000/svg">
+    <!-- An igloo: a dome of ice blocks with a doorway -->
+    <path d="m 1 14.5 a 7 10 0 0 1 14 0 z m 5 0 h 4 v -3 a 2 2 0 0 0 -4 0 z m -2.8 -6.9 h 9.6 v 0.8 h -9.6 z" fill="#222222" fill-rule="evenodd"/>
+</svg>

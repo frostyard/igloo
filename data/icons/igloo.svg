@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>Igloo</title>
+  <!-- An igloo of ice blocks with a shell prompt glowing in its doorway.
+       Colours follow the nsl mark's ink and ice; light falls from the upper right. -->
+  <defs>
+    <linearGradient id="dome" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.55" stop-color="#e4f8ff"/>
+      <stop offset="1" stop-color="#9fd8f2"/>
+    </linearGradient>
+    <linearGradient id="tunnel" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#c6ecfc"/>
+    </linearGradient>
+    <linearGradient id="door" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#17445e"/>
+      <stop offset="1" stop-color="#06111d"/>
+    </linearGradient>
+    <linearGradient id="snow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4fcff"/>
+      <stop offset="1" stop-color="#cdeefc"/>
+    </linearGradient>
+    <clipPath id="dome-clip">
+      <path d="M 14 102 A 50 74 0 0 1 114 102 Z"/>
+    </clipPath>
+    <clipPath id="tunnel-clip">
+      <path d="M 38 104 L 38 76 A 26 26 0 0 1 90 76 L 90 104 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- Shadow and snow -->
+  <ellipse cx="66" cy="110" rx="56" ry="9" fill="#0a1f31" opacity="0.22"/>
+  <ellipse cx="64" cy="104" rx="58" ry="11" fill="url(#snow)"/>
+
+  <!-- Dome -->
+  <path d="M 14 102 A 50 74 0 0 1 114 102 Z" fill="url(#dome)"/>
+  <g clip-path="url(#dome-clip)" fill="none" stroke="#8ccbe8" stroke-width="2" stroke-linecap="round">
+    <path d="M 4 84 Q 64 90 124 84"/>
+    <path d="M 8 65 Q 64 71 120 65"/>
+    <path d="M 16 47 Q 64 52 112 47"/>
+    <path d="M 30 31 Q 64 35 98 31"/>
+    <!-- Staggered joints between the rows of blocks -->
+    <path d="M 30 86 L 29 102 M 98 86 L 99 102"/>
+    <path d="M 22 67 L 21 85 M 52 69 L 52 88 M 78 69 L 78 88 M 106 67 L 107 85"/>
+    <path d="M 36 49 L 34 67 M 64 51 L 64 70 M 92 49 L 94 67"/>
+    <path d="M 48 33 L 46 49 M 80 33 L 82 49"/>
+  </g>
+
+  <!-- Entrance tunnel -->
+  <path d="M 38 104 L 38 76 A 26 26 0 0 1 90 76 L 90 104 Z" fill="url(#tunnel)"/>
+  <g clip-path="url(#tunnel-clip)" fill="none" stroke="#9fd3ec" stroke-width="1.75" stroke-linecap="round">
+    <path d="M 30 88 Q 64 92 98 88"/>
+    <path d="M 34 72 Q 64 75 94 72"/>
+    <path d="M 44 89 L 44 104 M 84 89 L 84 104 M 52 73 L 51 89 M 76 73 L 77 89"/>
+  </g>
+  <path d="M 38 104 L 38 76 A 26 26 0 0 1 90 76 L 90 104" fill="none" stroke="#7fc2e2" stroke-width="1.5" opacity="0.6"/>
+
+  <!-- Doorway with a shell prompt -->
+  <path d="M 49 104 L 49 82 A 15 15 0 0 1 79 82 L 79 104 Z" fill="url(#door)"/>
+  <path d="M 55 85 L 61 90 L 55 95" fill="none" stroke="#5ac9f7" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 64 96 L 72 96" fill="none" stroke="#aee9ff" stroke-width="3" stroke-linecap="round"/>
+</svg>

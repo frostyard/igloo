@@ -349,7 +349,7 @@
             <child>
               <object class="AdwSwitchRow" id="restore_session">
                 <property name="title" translatable="yes">Restore Session</property>
-                <property name="subtitle" translatable="yes">Attempt to restore previous tabs when Ptyxis starts</property>
+                <property name="subtitle" translatable="yes">Attempt to restore previous tabs on startup</property>
               </object>
             </child>
             <child>
