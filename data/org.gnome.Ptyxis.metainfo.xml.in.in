@@ -4,14 +4,21 @@
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <name>@APP_NAME@</name>
-  <summary>Container-oriented terminal</summary>
+  <summary>Container-oriented terminal with nsl machines</summary>
   <description>
     <p>
       Ptyxis is a terminal for GNOME that focuses on ease-of-use in a
       world of containers.
     </p>
+    <p>
+      This build adds nsl machines: WSL-style Linux machines on atomic Linux
+      hosts. Open a machine from the New Tab menu, and create, configure and
+      remove machines in Preferences.
+    </p>
     <p>Features:</p>
     <ul>
+      <li>Opens nsl machines in new tabs, in the directory you were in</li>
+      <li>Creates, starts, stops and removes nsl machines, and edits their VM resources</li>
       <li>Remembers current container when opening a new tab with support for podman, toolbox, distrobox, and more</li>
       <li>Configurable keyboard shortcuts</li>
       <li>Modern interface which integrates the palette with the window styling</li>
@@ -27,18 +34,14 @@
       <li>Terminal inspector to help when writing terminal-based applications</li>
     </ul>
   </description>
-  <project_group>GNOME</project_group>
   <!-- developer_name tag deprecated with Appstream 1.0 -->
-  <developer_name translate="no">Christian Hergert</developer_name>
-  <developer id="org.gnome">
-    <name translate="no">Christian Hergert</name>
+  <developer_name translate="no">Frostyard</developer_name>
+  <developer id="io.github.frostyard">
+    <name translate="no">Frostyard</name>
   </developer>
-  <url type="homepage">https://gitlab.gnome.org/chergert/ptyxis</url>
-  <url type="bugtracker">https://gitlab.gnome.org/chergert/ptyxis/issues</url>
-  <url type="translate">https://gitlab.gnome.org/chergert/ptyxis/-/tree/main/po</url>
-  <url type="vcs-browser">https://gitlab.gnome.org/chergert/ptyxis</url>
-
-  <update_contact>chergert@gnome.org</update_contact>
+  <url type="homepage">https://github.com/frostyard/ptyxis</url>
+  <url type="bugtracker">https://github.com/frostyard/ptyxis/issues</url>
+  <url type="vcs-browser">https://github.com/frostyard/ptyxis</url>
   <translation type="gettext">ptyxis</translation>
   <launchable type="desktop-id">@APP_ID@.desktop</launchable>
 

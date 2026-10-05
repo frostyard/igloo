@@ -79,6 +79,9 @@ static void ptyxis_application_new_tab_action    (GSimpleAction *action,
 static void ptyxis_application_preferences       (GSimpleAction *action,
                                                   GVariant      *param,
                                                   gpointer       user_data);
+static void ptyxis_application_manage_machines   (GSimpleAction *action,
+                                                  GVariant      *param,
+                                                  gpointer       user_data);
 static void ptyxis_application_focus_tab_by_uuid (GSimpleAction *action,
                                                   GVariant      *param,
                                                   gpointer       user_data);
@@ -89,6 +92,7 @@ static GActionEntry action_entries[] = {
   { "about", ptyxis_application_about },
   { "edit-profile", ptyxis_application_edit_profile, "s" },
   { "preferences", ptyxis_application_preferences },
+  { "manage-machines", ptyxis_application_manage_machines },
   { "focus-tab-by-uuid", ptyxis_application_focus_tab_by_uuid, "s" },
   { "new-window", ptyxis_application_new_window_action },
   { "new-tab", ptyxis_application_new_tab_action },
@@ -1453,6 +1457,22 @@ ptyxis_application_preferences (GSimpleAction *action,
 }
 
 static void
+ptyxis_application_manage_machines (GSimpleAction *action,
+                                    GVariant      *param,
+                                    gpointer       user_data)
+{
+  PtyxisPreferencesWindow *window;
+  PtyxisApplication *self = user_data;
+
+  g_assert (PTYXIS_IS_APPLICATION (self));
+
+  window = ptyxis_preferences_window_get_default ();
+  ptyxis_preferences_window_show_machines (window);
+  gtk_application_add_window (GTK_APPLICATION (self), GTK_WINDOW (window));
+  gtk_window_present (GTK_WINDOW (window));
+}
+
+static void
 ptyxis_application_new_window_action (GSimpleAction *action,
                                       GVariant      *param,
                                       gpointer       user_data)
@@ -2209,4 +2229,47 @@ ptyxis_application_make_default (GSimpleAction *action,
   g_assert (PTYXIS_IS_APPLICATION (user_data));
 
   ptyxis_make_default ();
+}
+
+/**
+ * ptyxis_application_get_machines:
+ * @self: a #PtyxisApplication
+ *
+ * Gets the proxy for managing nsl machines through the agent.
+ *
+ * Returns: (transfer none) (nullable): a #PtyxisIpcMachines
+ */
+PtyxisIpcMachines *
+ptyxis_application_get_machines (PtyxisApplication *self)
+{
+  g_return_val_if_fail (PTYXIS_IS_APPLICATION (self), NULL);
+
+  if (self->client == NULL)
+    return NULL;
+
+  return ptyxis_client_get_machines (self->client);
+}
+
+/**
+ * ptyxis_application_open_container:
+ * @self: a #PtyxisApplication
+ * @container_id: the identifier of a container, such as "nsl:trixie"
+ *
+ * Opens a new tab for @container_id in the most recent terminal window,
+ * creating a window when there is none.
+ */
+void
+ptyxis_application_open_container (PtyxisApplication *self,
+                                   const char        *container_id)
+{
+  PtyxisWindow *window;
+
+  g_return_if_fail (PTYXIS_IS_APPLICATION (self));
+  g_return_if_fail (container_id != NULL);
+
+  if (!(window = get_current_window (self)))
+    window = ptyxis_window_new_empty ();
+
+  gtk_widget_activate_action (GTK_WIDGET (window), "win.new-tab", "(ss)", "", container_id);
+  gtk_window_present (GTK_WINDOW (window));
 }

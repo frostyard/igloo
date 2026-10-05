@@ -36,6 +36,8 @@
 
 #include "ptyxis-agent-impl.h"
 #include "ptyxis-distrobox-container.h"
+#include "ptyxis-machines-impl.h"
+#include "ptyxis-nsl-provider.h"
 #include "ptyxis-podman-provider.h"
 #include "ptyxis-session-container.h"
 #include "ptyxis-toolbox-container.h"
@@ -46,6 +48,7 @@ gint64 default_rlimit_nofile = 0;
 typedef struct _PtyxisAgent
 {
   PtyxisAgentImpl   *impl;
+  PtyxisMachinesImpl *machines;
   GSocket           *socket;
   GSocketConnection *stream;
   GDBusConnection   *bus;
@@ -70,6 +73,7 @@ ptyxis_agent_init (PtyxisAgent  *agent,
 {
   g_autoptr(PtyxisSessionContainer) session = NULL;
   g_autoptr(PtyxisContainerProvider) podman = NULL;
+  g_autoptr(PtyxisContainerProvider) nsl = NULL;
   g_autoptr(GError) local_error = NULL;
   g_autoptr(GFile) jhbuildrc = NULL;
 
@@ -159,6 +163,21 @@ ptyxis_agent_init (PtyxisAgent  *agent,
 
   ptyxis_agent_impl_add_provider (agent->impl, podman);
 
+  /* nsl machines. Names come from the state directory right away so that
+   * a restored session can find them; `nsl list` fills in the rest.
+   */
+  nsl = ptyxis_nsl_provider_new ();
+  ptyxis_nsl_provider_load_names (PTYXIS_NSL_PROVIDER (nsl));
+  ptyxis_agent_impl_add_provider (agent->impl, nsl);
+  ptyxis_nsl_provider_queue_update (PTYXIS_NSL_PROVIDER (nsl));
+
+  agent->machines = ptyxis_machines_impl_new (PTYXIS_NSL_PROVIDER (nsl));
+  if (!g_dbus_interface_skeleton_export (G_DBUS_INTERFACE_SKELETON (agent->machines),
+                                         agent->bus,
+                                         "/org/gnome/Ptyxis/Machines",
+                                         error))
+    return FALSE;
+
   g_dbus_connection_start_message_processing (agent->bus);
 
   return TRUE;
@@ -176,6 +195,7 @@ G_GNUC_UNUSED
 static void
 ptyxis_agent_destroy (PtyxisAgent *agent)
 {
+  g_clear_object (&agent->machines);
   g_clear_object (&agent->impl);
   g_clear_object (&agent->socket);
   g_clear_object (&agent->stream);

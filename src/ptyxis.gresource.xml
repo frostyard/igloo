@@ -6,6 +6,9 @@
     <file preprocess="xml-stripblanks">ptyxis-custom-link-editor.ui</file>
     <file preprocess="xml-stripblanks">ptyxis-custom-link-row.ui</file>
     <file preprocess="xml-stripblanks">ptyxis-inspector.ui</file>
+    <file preprocess="xml-stripblanks">ptyxis-machine-command-dialog.ui</file>
+    <file preprocess="xml-stripblanks">ptyxis-machine-create-dialog.ui</file>
+    <file preprocess="xml-stripblanks">ptyxis-machines-page.ui</file>
     <file preprocess="xml-stripblanks">ptyxis-menu-row.ui</file>
     <file preprocess="xml-stripblanks">ptyxis-palette-preview.ui</file>
     <file preprocess="xml-stripblanks">ptyxis-preferences-window.ui</file>
@@ -24,6 +27,7 @@
     <file preprocess="xml-stripblanks">icons/enter-keyboard-shortcut.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/container-generic-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/container-jhbuild-symbolic.svg</file>
+    <file preprocess="xml-stripblanks">icons/scalable/actions/container-nsl-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/container-podman-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/container-toolbox-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/down-small-symbolic.svg</file>

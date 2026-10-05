@@ -88,5 +88,8 @@ PtyxisIpcContainer *ptyxis_application_find_container_by_name     (PtyxisApplica
                                                                    const char           *runtime,
                                                                    const char           *name);
 void                ptyxis_application_save_session               (PtyxisApplication    *self);
+PtyxisIpcMachines  *ptyxis_application_get_machines               (PtyxisApplication    *self);
+void                ptyxis_application_open_container             (PtyxisApplication    *self,
+                                                                   const char           *container_id);
 
 G_END_DECLS

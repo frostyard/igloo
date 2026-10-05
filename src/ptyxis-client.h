@@ -71,5 +71,6 @@ const char         *ptyxis_client_get_os_name                (PtyxisClient      
 gboolean            ptyxis_client_ping                       (PtyxisClient         *self,
                                                               int                   timeout_msec,
                                                               GError              **error);
+PtyxisIpcMachines  *ptyxis_client_get_machines               (PtyxisClient         *self);
 
 G_END_DECLS

@@ -1,3 +1,6 @@
+> **This is a fork with [nsl](https://frostyard.github.io/nsl/) machine integration.**
+> See [NSL.md](NSL.md) for what it adds and how to build the `io.github.frostyard.Ptyxis` Flatpak.
+
 ![Ptyxis Logo](https://gitlab.gnome.org/chergert/ptyxis/-/raw/main/data/icons/ptyxis.svg)
 
 [![License: GPL v3+](https://img.shields.io/badge/License-GPL%20v3%2B-blue.svg)](https://gitlab.gnome.org/chergert/ptyxis/-/blob/main/COPYING)

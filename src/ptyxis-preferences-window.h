@@ -34,5 +34,6 @@ GtkWindow               *ptyxis_preferences_window_new            (GtkApplicatio
 void                     ptyxis_preferences_window_edit_profile   (PtyxisPreferencesWindow *self,
                                                                    PtyxisProfile           *profile);
 void                     ptyxis_preferences_window_edit_shortcuts (PtyxisPreferencesWindow *self);
+void                     ptyxis_preferences_window_show_machines  (PtyxisPreferencesWindow *self);
 
 G_END_DECLS

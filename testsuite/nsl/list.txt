@@ -1,0 +1,5 @@
+VM      STATE    IMAGE                    RESOURCES  DATA DISK
+shared  stopped  nsl-vm-trixie-x86-64-r9  -          128 GiB
+
+MACHINE  STATE    IMAGE                                TIER    DEFAULT
+trixie   stopped  nsl-machine-debian-trixie-x86-64-r4  shared  *

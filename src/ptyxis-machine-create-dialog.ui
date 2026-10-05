@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+ Copyright 2026 Brian Ketelsen
+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <http://www.gnu.org/licenses/>.
+-->
+<interface>
+  <template class="PtyxisMachineCreateDialog" parent="AdwDialog">
+    <property name="title" translatable="yes">New Machine</property>
+    <property name="content-width">520</property>
+    <property name="default-widget">create_button</property>
+    <property name="focus-widget">name_row</property>
+    <property name="child">
+      <object class="AdwToolbarView">
+        <child type="top">
+          <object class="AdwHeaderBar">
+            <property name="show-start-title-buttons">false</property>
+            <property name="show-end-title-buttons">false</property>
+            <child type="start">
+              <object class="GtkButton">
+                <property name="label" translatable="yes">_Cancel</property>
+                <property name="use-underline">true</property>
+                <signal name="clicked" handler="ptyxis_machine_create_dialog_cancel_cb" swapped="true"/>
+              </object>
+            </child>
+            <child type="end">
+              <object class="GtkButton" id="create_button">
+                <property name="label" translatable="yes">C_reate</property>
+                <property name="use-underline">true</property>
+                <property name="sensitive">false</property>
+                <signal name="clicked" handler="ptyxis_machine_create_dialog_create_cb" swapped="true"/>
+                <style>
+                  <class name="suggested-action"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+        <property name="content">
+          <object class="AdwPreferencesPage">
+            <child>
+              <object class="AdwPreferencesGroup">
+                <property name="description" translatable="yes">A machine is a Linux distribution with its own packages and services. It works on your files under /mnt/host and opens in the directory you were in.</property>
+                <child>
+                  <object class="AdwEntryRow" id="name_row">
+                    <property name="title" translatable="yes">Name</property>
+                    <property name="activates-default">true</property>
+                    <signal name="changed" handler="ptyxis_machine_create_dialog_name_changed_cb" swapped="true"/>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwComboRow" id="image_row">
+                    <property name="title" translatable="yes">Distribution</property>
+                    <property name="sensitive">false</property>
+                    <property name="model">
+                      <object class="GtkStringList" id="image_labels"/>
+                    </property>
+                    <signal name="notify::selected" handler="ptyxis_machine_create_dialog_image_changed_cb" swapped="true"/>
+                    <child type="suffix">
+                      <object class="AdwSpinner" id="images_spinner"/>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="AdwPreferencesGroup" id="message_group">
+                <property name="visible">false</property>
+                <child>
+                  <object class="GtkLabel" id="message_label">
+                    <property name="xalign">0</property>
+                    <property name="wrap">true</property>
+                    <style>
+                      <class name="error"/>
+                    </style>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="retry_button">
+                    <property name="label" translatable="yes">_Try Again</property>
+                    <property name="use-underline">true</property>
+                    <property name="halign">start</property>
+                    <property name="margin-top">6</property>
+                    <property name="visible">false</property>
+                    <signal name="clicked" handler="ptyxis_machine_create_dialog_retry_cb" swapped="true"/>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="AdwPreferencesGroup">
+                <child>
+                  <object class="AdwSwitchRow" id="default_row">
+                    <property name="title" translatable="yes">Make Default</property>
+                    <property name="subtitle" translatable="yes">Used when nsl runs without a machine name</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwSwitchRow" id="isolated_row">
+                    <property name="title" translatable="yes">Isolated</property>
+                    <property name="subtitle" translatable="yes">Runs in a VM of its own with no access to your files, desktop or host actions. Use it for software you do not trust.</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwEntryRow" id="user_row">
+                    <property name="title" translatable="yes">Username (Optional)</property>
+                    <property name="activates-default">true</property>
+                    <signal name="changed" handler="ptyxis_machine_create_dialog_name_changed_cb" swapped="true"/>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </property>
+      </object>
+    </property>
+  </template>
+</interface>

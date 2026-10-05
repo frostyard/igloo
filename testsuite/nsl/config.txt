@@ -1,0 +1,9 @@
+Configuration file: /var/home/bjk/.config/nsl/nsl.conf (absent)
+
+SETTING                VALUE  SOURCE
+vm.memory              29     default (half of host memory)
+vm.cpus                32     default (host CPUs)
+machines.autostart     true   default
+machines.idle_timeout  15     default
+isolated.memory        2      default
+isolated.cpus          2      default

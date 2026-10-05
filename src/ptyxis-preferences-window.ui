@@ -1011,6 +1011,9 @@
         </child>
       </object>
     </child>
+    <child>
+      <object class="PtyxisMachinesPage"/>
+    </child>
   </template>
   <object class="GListStore" id="erase_bindings">
     <property name="item-type">PtyxisPreferencesListItem</property>

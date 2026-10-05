@@ -204,6 +204,93 @@
     </method>
   </interface>
 
+  <!--
+    org.gnome.Ptyxis.Machines:
+
+    Manages nsl machines on the host. The agent exports this interface at
+    /org/gnome/Ptyxis/Machines whether or not nsl is installed; NslPath is
+    empty when nsl could not be found.
+  -->
+  <interface name="org.gnome.Ptyxis.Machines">
+    <!-- The nsl executable on the host, or empty when nsl was not found -->
+    <property name="NslPath" access="read" type="s"/>
+
+    <!-- The output of `nsl version` -->
+    <property name="Version" access="read" type="s"/>
+
+    <!--
+      Changed:
+
+      Emitted when the set of machines, or their state, may have changed.
+      Clients should call List() again.
+    -->
+    <signal name="Changed"/>
+
+    <!--
+      Refresh:
+
+      Looks for nsl again and reloads machines. Emits Changed.
+    -->
+    <method name="Refresh"/>
+
+    <!--
+      List:
+
+      Machines as reported by `nsl list`. Each dictionary contains
+      "name" (s), "state" (s), "image" (s), "tier" (s) and "default" (b).
+    -->
+    <method name="List">
+      <arg name="machines" direction="out" type="aa{sv}"/>
+    </method>
+
+    <!--
+      ListImages:
+      @refresh: check the registry instead of using a recent catalogue
+
+      Machine images from `nsl images`. Each dictionary contains
+      "selectors" (as), "build" (s) and "cached" (b).
+    -->
+    <method name="ListImages">
+      <arg name="refresh" direction="in" type="b"/>
+      <arg name="images" direction="out" type="aa{sv}"/>
+    </method>
+
+    <!--
+      GetConfig:
+
+      The effective configuration from `nsl config`. @path is the
+      configuration file. Each dictionary contains "key" (s, such as
+      "vm.memory"), "value" (s) and "source" (s).
+    -->
+    <method name="GetConfig">
+      <arg name="path" direction="out" type="s"/>
+      <arg name="settings" direction="out" type="aa{sv}"/>
+    </method>
+
+    <!--
+      SetConfig:
+      @settings: "section.key" to value; an empty value removes the key
+
+      Writes nsl.conf, keeping its comments, and checks the result with
+      `nsl config`. The previous file is restored when nsl rejects it.
+    -->
+    <method name="SetConfig">
+      <arg name="settings" direction="in" type="a{ss}"/>
+    </method>
+
+    <!--
+      Run:
+      @args: arguments to nsl, such as ["stop", "trixie"]
+
+      Runs nsl without a terminal and waits for it to exit.
+    -->
+    <method name="Run">
+      <arg name="args" direction="in" type="as"/>
+      <arg name="exit_code" direction="out" type="i"/>
+      <arg name="output" direction="out" type="s"/>
+    </method>
+  </interface>
+
   <interface name="org.gnome.Ptyxis.Process">
     <!--
       HasForegroundProcess:

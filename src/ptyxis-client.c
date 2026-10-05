@@ -40,8 +40,9 @@ struct _PtyxisClient
   GObject          parent_instance;
   GPtrArray       *containers;
   GSubprocess     *subprocess;
-  GDBusConnection *bus;
-  PtyxisIpcAgent  *proxy;
+  GDBusConnection   *bus;
+  PtyxisIpcAgent    *proxy;
+  PtyxisIpcMachines *machines;
 };
 
 enum {
@@ -104,6 +105,7 @@ ptyxis_client_dispose (GObject *object)
 
   g_clear_object (&self->bus);
   g_clear_object (&self->proxy);
+  g_clear_object (&self->machines);
   g_clear_object (&self->subprocess);
 
   G_OBJECT_CLASS (ptyxis_client_parent_class)->dispose (object);
@@ -427,6 +429,17 @@ ptyxis_client_new (gboolean   in_sandbox,
                                                        NULL,
                                                        error)))
     return NULL;
+
+  if (!(self->machines = ptyxis_ipc_machines_proxy_new_sync (bus,
+                                                              G_DBUS_PROXY_FLAGS_NONE,
+                                                              NULL,
+                                                              "/org/gnome/Ptyxis/Machines",
+                                                              NULL,
+                                                              error)))
+    return NULL;
+
+  /* nsl may take minutes to boot a VM or remove a machine */
+  g_dbus_proxy_set_default_timeout (G_DBUS_PROXY (self->machines), G_MAXINT);
 
   g_signal_connect_object (self->proxy,
                            "containers-changed",
@@ -996,4 +1009,20 @@ ptyxis_client_ping (PtyxisClient  *self,
                                      error);
 
   return ret != NULL;
+}
+
+/**
+ * ptyxis_client_get_machines:
+ * @self: a #PtyxisClient
+ *
+ * Gets the proxy used to manage nsl machines through the agent.
+ *
+ * Returns: (transfer none) (nullable): a #PtyxisIpcMachines
+ */
+PtyxisIpcMachines *
+ptyxis_client_get_machines (PtyxisClient *self)
+{
+  g_return_val_if_fail (PTYXIS_IS_CLIENT (self), NULL);
+
+  return self->machines;
 }

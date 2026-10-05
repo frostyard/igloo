@@ -71,6 +71,8 @@ struct _PtyxisWindow
   GtkStack              *menu_search_stack;
   GtkSearchEntry        *menu_search;
   GtkListView           *menu_list_view;
+  GtkFilterListModel    *machines;
+  GtkCustomFilter       *machines_filter;
   GtkFilterListModel    *maybe_containers;
   GtkCustomFilter       *maybe_containers_filter;
   GtkFilterListModel    *not_containers;
@@ -560,7 +562,21 @@ ptyxis_window_apply_current_settings (PtyxisWindow *self,
         }
 
       if (current_directory_uri != NULL)
-        ptyxis_tab_set_previous_working_directory_uri (tab, current_directory_uri);
+        {
+          g_autoptr(PtyxisIpcContainer) source = ptyxis_tab_dup_container (active_tab);
+          g_autofree char *translated = NULL;
+
+          /* Pass the directory in host terms so that the new tab's container,
+           * which may differ, can map it to its own. nsl machines report
+           * host directories below /mnt/host, for example.
+           */
+          if (source != NULL &&
+              g_strcmp0 (ptyxis_ipc_container_get_provider (source), "session") != 0 &&
+              ptyxis_ipc_container_call_translate_uri_sync (source, current_directory_uri, &translated, NULL, NULL))
+            g_set_str (&current_directory_uri, translated);
+
+          ptyxis_tab_set_previous_working_directory_uri (tab, current_directory_uri);
+        }
 
       ptyxis_tab_set_zoom (tab, zoom);
 
@@ -1717,6 +1733,12 @@ ptyxis_window_check_singular (gpointer instance,
   return n_items <= 1;
 }
 
+static gboolean
+is_machine (gpointer item)
+{
+  return g_strcmp0 (ptyxis_ipc_container_get_provider (item), "nsl") == 0;
+}
+
 static char *
 ptyxis_window_get_header_title (gpointer instance,
                                 gpointer item)
@@ -1724,6 +1746,9 @@ ptyxis_window_get_header_title (gpointer instance,
   if (PTYXIS_IPC_IS_CONTAINER (item))
     {
       const char *str = ptyxis_ipc_container_get_display_name (item);
+
+      if (is_machine (item))
+        return g_strdup (_("Machines"));
 
       if (str && str[0])
         return g_strdup (_("Containers"));
@@ -1775,6 +1800,17 @@ ptyxis_window_menu_stop_search (PtyxisWindow   *self,
 
   if ((tab = ptyxis_window_get_active_tab (self)))
     ptyxis_tab_grab_focus (tab);
+}
+
+static void
+ptyxis_window_menu_popdown_cb (PtyxisWindow *self,
+                               GtkButton    *button)
+{
+  g_assert (PTYXIS_IS_WINDOW (self));
+  g_assert (GTK_IS_BUTTON (button));
+
+  gtk_menu_button_popdown (self->new_terminal_menu_button);
+  gtk_editable_set_text (GTK_EDITABLE (self->menu_search), "");
 }
 
 static void
@@ -1856,7 +1892,15 @@ nonempty_display_name (gpointer item,
 {
   const char *str = ptyxis_ipc_container_get_display_name (item);
 
-  return str && str[0];
+  /* nsl machines have a section of their own */
+  return str && str[0] && !is_machine (item);
+}
+
+static gboolean
+machine_filter_func (gpointer item,
+                     gpointer user_data)
+{
+  return is_machine (item);
 }
 
 static gboolean
@@ -1895,6 +1939,8 @@ ptyxis_window_bind_section_title (PtyxisWindow             *self,
 
   if (PTYXIS_IS_PROFILE (item))
     gtk_label_set_label (GTK_LABEL (child), _("Profiles"));
+  else if (PTYXIS_IPC_IS_CONTAINER (item) && is_machine (item))
+    gtk_label_set_label (GTK_LABEL (child), _("Machines"));
   else if (PTYXIS_IPC_IS_CONTAINER (item) &&
            (str = ptyxis_ipc_container_get_display_name (PTYXIS_IPC_CONTAINER (item))) &&
            (str && str[0]))
@@ -2054,6 +2100,8 @@ ptyxis_window_class_init (PtyxisWindowClass *klass)
   gtk_widget_class_bind_template_child (widget_class, PtyxisWindow, find_bar_revealer);
   gtk_widget_class_bind_template_child (widget_class, PtyxisWindow, fullscreen_box);
   gtk_widget_class_bind_template_child (widget_class, PtyxisWindow, header_bar);
+  gtk_widget_class_bind_template_child (widget_class, PtyxisWindow, machines);
+  gtk_widget_class_bind_template_child (widget_class, PtyxisWindow, machines_filter);
   gtk_widget_class_bind_template_child (widget_class, PtyxisWindow, maybe_containers);
   gtk_widget_class_bind_template_child (widget_class, PtyxisWindow, maybe_containers_filter);
   gtk_widget_class_bind_template_child (widget_class, PtyxisWindow, menu_list_view);
@@ -2079,6 +2127,7 @@ ptyxis_window_class_init (PtyxisWindowClass *klass)
   gtk_widget_class_bind_template_callback (widget_class, ptyxis_window_get_container_title);
   gtk_widget_class_bind_template_callback (widget_class, ptyxis_window_get_header_title);
   gtk_widget_class_bind_template_callback (widget_class, ptyxis_window_menu_activate_cb);
+  gtk_widget_class_bind_template_callback (widget_class, ptyxis_window_menu_popdown_cb);
   gtk_widget_class_bind_template_callback (widget_class, ptyxis_window_menu_search_activate_cb);
   gtk_widget_class_bind_template_callback (widget_class, ptyxis_window_menu_stop_search);
   gtk_widget_class_bind_template_callback (widget_class, ptyxis_window_notify_menu_n_items_cb);
@@ -2223,6 +2272,8 @@ ptyxis_window_init (PtyxisWindow *self)
                                      empty_display_name, NULL, NULL);
   gtk_custom_filter_set_filter_func (self->maybe_containers_filter,
                                      nonempty_display_name, NULL, NULL);
+  gtk_custom_filter_set_filter_func (self->machines_filter,
+                                     machine_filter_func, NULL, NULL);
 }
 
 PtyxisTab *

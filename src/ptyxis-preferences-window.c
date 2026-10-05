@@ -30,6 +30,7 @@
 #include "ptyxis-application.h"
 #include "ptyxis-custom-link-editor.h"
 #include "ptyxis-custom-link-row.h"
+#include "ptyxis-machines-page.h"
 #include "ptyxis-palette-preview.h"
 #include "ptyxis-preferences-list-item.h"
 #include "ptyxis-preferences-window.h"
@@ -1241,6 +1242,7 @@ ptyxis_preferences_window_class_init (PtyxisPreferencesWindowClass *klass)
                                    NULL,
                                    ptyxis_preferences_window_add_toast);
 
+  g_type_ensure (PTYXIS_TYPE_MACHINES_PAGE);
   g_type_ensure (PTYXIS_TYPE_PREFERENCES_LIST_ITEM);
   g_type_ensure (PTYXIS_TYPE_PROFILE_EDITOR);
   g_type_ensure (PTYXIS_TYPE_PROFILE_ROW);
@@ -1317,6 +1319,15 @@ ptyxis_preferences_window_edit_shortcuts (PtyxisPreferencesWindow *self)
 
   adw_preferences_window_pop_subpage (ADW_PREFERENCES_WINDOW (self));
   adw_preferences_window_set_visible_page_name (ADW_PREFERENCES_WINDOW (self), "shortcuts");
+}
+
+void
+ptyxis_preferences_window_show_machines (PtyxisPreferencesWindow *self)
+{
+  g_return_if_fail (PTYXIS_IS_PREFERENCES_WINDOW (self));
+
+  adw_preferences_window_pop_subpage (ADW_PREFERENCES_WINDOW (self));
+  adw_preferences_window_set_visible_page_name (ADW_PREFERENCES_WINDOW (self), "machines");
 }
 
 G_GNUC_END_IGNORE_DEPRECATIONS

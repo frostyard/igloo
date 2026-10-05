@@ -15,6 +15,7 @@ testsuite_c_args = [
 ]
 
 testsuite = {
+  'test-nsl' : {},
   'test-podman' : {},
 }
 

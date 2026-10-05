@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+ Copyright 2026 Brian Ketelsen
+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <http://www.gnu.org/licenses/>.
+-->
+<interface>
+  <template class="PtyxisMachinesPage" parent="AdwPreferencesPage">
+    <property name="name">machines</property>
+    <property name="title" translatable="yes">Machines</property>
+    <property name="icon-name">container-nsl-symbolic</property>
+    <child>
+      <object class="AdwPreferencesGroup" id="missing_group">
+        <property name="visible">false</property>
+        <property name="title" translatable="yes">nsl Is Not Installed</property>
+        <property name="description" translatable="yes">nsl runs WSL-style Linux machines on atomic Linux hosts. Install it on this computer to create machines and open them in new tabs.</property>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Installation Guide</property>
+            <property name="subtitle">frostyard.github.io/nsl</property>
+            <property name="activatable">true</property>
+            <property name="action-name">machines.install-guide</property>
+            <child type="suffix">
+              <object class="GtkImage">
+                <property name="icon-name">adw-external-link-symbolic</property>
+                <property name="accessible-role">presentation</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwButtonRow">
+            <property name="title" translatable="yes">_Check Again</property>
+            <property name="use-underline">true</property>
+            <property name="action-name">machines.rescan</property>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwPreferencesGroup" id="machines_group">
+        <property name="title" translatable="yes">Machines</property>
+        <property name="description" translatable="yes">Linux machines managed by nsl. Open one from the New Tab menu or with the terminal button.</property>
+        <property name="header-suffix">
+          <object class="GtkBox">
+            <property name="spacing">6</property>
+            <property name="valign">center</property>
+            <child>
+              <object class="AdwSpinner" id="spinner">
+                <property name="visible">false</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkButton">
+                <property name="icon-name">view-refresh-symbolic</property>
+                <property name="tooltip-text" translatable="yes">Refresh</property>
+                <property name="action-name">machines.refresh</property>
+                <style>
+                  <class name="flat"/>
+                </style>
+              </object>
+            </child>
+            <child>
+              <object class="GtkButton">
+                <property name="action-name">machines.create</property>
+                <property name="child">
+                  <object class="AdwButtonContent">
+                    <property name="icon-name">list-add-symbolic</property>
+                    <property name="label" translatable="yes">_New Machine</property>
+                    <property name="use-underline">true</property>
+                  </object>
+                </property>
+                <style>
+                  <class name="flat"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </property>
+        <child>
+          <object class="GtkListBox" id="machines_list_box">
+            <property name="selection-mode">none</property>
+            <style>
+              <class name="boxed-list"/>
+            </style>
+            <child type="placeholder">
+              <object class="GtkBox">
+                <property name="orientation">vertical</property>
+                <property name="spacing">12</property>
+                <property name="margin-top">24</property>
+                <property name="margin-bottom">24</property>
+                <property name="margin-start">12</property>
+                <property name="margin-end">12</property>
+                <child>
+                  <object class="GtkLabel" id="placeholder_label">
+                    <property name="label" translatable="yes">No Machines</property>
+                    <property name="wrap">true</property>
+                    <style>
+                      <class name="dimmed"/>
+                    </style>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton">
+                    <property name="label" translatable="yes">_Create a Machine…</property>
+                    <property name="use-underline">true</property>
+                    <property name="halign">center</property>
+                    <property name="action-name">machines.create</property>
+                    <style>
+                      <class name="pill"/>
+                      <class name="suggested-action"/>
+                    </style>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwPreferencesGroup" id="settings_group">
+        <property name="title" translatable="yes">Resources</property>
+        <property name="header-suffix">
+          <object class="GtkButton">
+            <property name="label" translatable="yes">_Reset</property>
+            <property name="use-underline">true</property>
+            <property name="tooltip-text" translatable="yes">Use nsl’s default resources</property>
+            <property name="valign">center</property>
+            <property name="action-name">machines.reset-settings</property>
+            <style>
+              <class name="flat"/>
+            </style>
+          </object>
+        </property>
+        <child>
+          <object class="AdwSpinRow" id="vm_memory">
+            <property name="title" translatable="yes">Memory</property>
+            <property name="subtitle" translatable="yes">GiB available to the shared VM</property>
+            <property name="adjustment">
+              <object class="GtkAdjustment">
+                <property name="lower">1</property>
+                <property name="upper">128</property>
+                <property name="step-increment">1</property>
+                <property name="page-increment">4</property>
+              </object>
+            </property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwSpinRow" id="vm_cpus">
+            <property name="title" translatable="yes">Processors</property>
+            <property name="subtitle" translatable="yes">Virtual CPUs for the shared VM</property>
+            <property name="adjustment">
+              <object class="GtkAdjustment">
+                <property name="lower">1</property>
+                <property name="upper">64</property>
+                <property name="step-increment">1</property>
+                <property name="page-increment">4</property>
+              </object>
+            </property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwSwitchRow" id="autostart">
+            <property name="title" translatable="yes">Start All Machines with the VM</property>
+            <property name="subtitle" translatable="yes">Otherwise each machine starts when it is first used</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwSpinRow" id="idle_timeout">
+            <property name="title" translatable="yes">Stop Idle Machines After</property>
+            <property name="subtitle" translatable="yes">Minutes without sessions, or 0 to keep machines running</property>
+            <property name="adjustment">
+              <object class="GtkAdjustment">
+                <property name="lower">0</property>
+                <property name="upper">1440</property>
+                <property name="step-increment">5</property>
+                <property name="page-increment">30</property>
+              </object>
+            </property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwExpanderRow">
+            <property name="title" translatable="yes">Isolated Machines</property>
+            <property name="subtitle" translatable="yes">Each isolated machine runs in a VM of its own</property>
+            <child>
+              <object class="AdwSpinRow" id="isolated_memory">
+                <property name="title" translatable="yes">Memory</property>
+                <property name="subtitle" translatable="yes">GiB for each isolated VM</property>
+                <property name="adjustment">
+                  <object class="GtkAdjustment">
+                    <property name="lower">1</property>
+                    <property name="upper">128</property>
+                    <property name="step-increment">1</property>
+                    <property name="page-increment">4</property>
+                  </object>
+                </property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwSpinRow" id="isolated_cpus">
+                <property name="title" translatable="yes">Processors</property>
+                <property name="subtitle" translatable="yes">Virtual CPUs for each isolated VM</property>
+                <property name="adjustment">
+                  <object class="GtkAdjustment">
+                    <property name="lower">1</property>
+                    <property name="upper">64</property>
+                    <property name="step-increment">1</property>
+                    <property name="page-increment">4</property>
+                  </object>
+                </property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwPreferencesGroup" id="host_group">
+        <property name="title" translatable="yes">Host</property>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Check This Computer</property>
+            <property name="subtitle" translatable="yes">Run nsl doctor to check KVM, QEMU and the other requirements</property>
+            <property name="activatable">true</property>
+            <property name="action-name">machines.doctor</property>
+            <child type="suffix">
+              <object class="GtkImage">
+                <property name="icon-name">go-next-symbolic</property>
+                <property name="accessible-role">presentation</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Update the VM Image</property>
+            <property name="subtitle" translatable="yes">Select the newest signed VM image for the next time the VM starts</property>
+            <property name="activatable">true</property>
+            <property name="action-name">machines.update</property>
+            <child type="suffix">
+              <object class="GtkImage">
+                <property name="icon-name">go-next-symbolic</property>
+                <property name="accessible-role">presentation</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Shut Down All Machines</property>
+            <property name="subtitle" translatable="yes">Stop every running machine and nsl VM</property>
+            <property name="activatable">true</property>
+            <property name="action-name">machines.shutdown</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow" id="version_row">
+            <property name="title" translatable="yes">nsl</property>
+            <style>
+              <class name="property"/>
+            </style>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

@@ -70,6 +70,7 @@ ptyxis_process_impl_class_init (PtyxisProcessImplClass *klass)
   ADD_MAPPING ("flatpak", "container");
   ADD_MAPPING ("mosh", "remote");
   ADD_MAPPING ("mosh-client", "remote");
+  ADD_MAPPING ("nsl", "container");
   ADD_MAPPING ("podman", "container");
   ADD_MAPPING ("rlogin", "remote");
   ADD_MAPPING ("scp", "remote");

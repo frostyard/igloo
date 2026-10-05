@@ -1,0 +1,11 @@
+Catalogue 13 (expires 2026-10-29T15:27:57Z)
+KIND     SELECTORS                                         BUILD                                      CACHED
+vm       -                                                 nsl-vm-trixie-x86-64-r10                   no
+machine  debian:trixie, debian:13                          nsl-machine-debian-trixie-x86-64-r4        yes
+machine  fedora:44                                         nsl-machine-fedora-44-x86-64-r4            yes
+machine  arch:rolling, arch:btw                            nsl-machine-arch-rolling-x86-64-r5         no
+machine  opensuse:tumbleweed, opensuse-tumbleweed:rolling  nsl-machine-opensuse-tumbleweed-x86-64-r5  no
+machine  ubuntu:resolute, ubuntu:26.04                     nsl-machine-ubuntu-resolute-x86-64-r1      no
+machine  centos:10, centos-stream:10                       nsl-machine-centos-10-x86-64-r1            no
+machine  opensuse:16.0, opensuse-leap:16.0                 nsl-machine-opensuse-16.0-x86-64-r2        no
+VM image in effect: nsl-vm-trixie-x86-64-r9
