@@ -32,6 +32,28 @@ Every pull request's [CI run](https://github.com/frostyard/igloo/actions/workflo
 also keeps a bundle, `igloo-flatpak`, to try a change before it merges:
 unzip it and run `flatpak install --user igloo.flatpak`.
 
+## Remove
+
+Remove Igloo with:
+
+```sh
+flatpak uninstall io.github.frostyard.Igloo
+```
+
+This keeps Igloo's settings and saved sessions. To remove them too, which
+deletes `~/.var/app/io.github.frostyard.Igloo`:
+
+```sh
+flatpak uninstall --delete-data io.github.frostyard.Igloo
+```
+
+Removing Igloo does not remove nsl or any machine. Use `nsl remove` for
+machines. If no other app needs the Frostyard remote, remove it as well:
+
+```sh
+flatpak remote-delete frostyard
+```
+
 ## What it adds to Ptyxis
 
 - **New Tab menu.** The dropdown next to the new tab button lists nsl machines
@@ -161,6 +183,10 @@ opened from a machine tab at `/mnt/host/var/home/you/src` starts in
 `/var/home/you/src`. Links clicked in a machine tab that point below
 `/mnt/host` open the host file they name.
 
+The nsl machine images report the shell's directory with OSC 7 through
+`/etc/profile.d/nsl-osc7.sh`, so a new tab opened from a machine tab starts in
+its current directory.
+
 `agent/ptyxis-nsl.c` reads the documents `nsl list --json`, `nsl images --json`
 and `nsl config --json` print, as nsl's
 [CLI contract](https://github.com/frostyard/nsl/blob/main/docs/specs/cli.md#machine-readable-output)
@@ -170,12 +196,6 @@ output. The *Resources* rows take their ranges from `config --json`.
 
 ## Known limitations
 
-- A tab only learns its machine's working directory when the guest shell
-  reports it with OSC 7, as `vte.sh` does. The nsl Debian image ships no such
-  script, so a new tab opened from a machine tab starts in the guest home
-  instead of the current directory. Installing `vte.sh` (Debian:
-  `libvte-2.91-common`) in a machine, or adding it to nsl's machine images,
-  fixes this.
 - Machine states on the Machines page refresh when the page is shown, after an
   action and after starting a terminal, not continuously.
 - Export and import are not in the interface yet; use `nsl export` and
