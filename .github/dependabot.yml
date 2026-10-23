@@ -1,0 +1,8 @@
+version: 2
+updates:
+  # Bumps the pinned action SHAs and their version comments together
+  # (core ADR-0021).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

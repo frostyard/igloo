@@ -122,9 +122,16 @@ The manifest builds VTE 0.84.1 with fast_float and simdutf on top of the GNOME
 51 runtime, then builds this checkout.
 
 [CI](.github/workflows/flatpak.yml) builds the same manifest with its tests on
-every push and pull request. On `main` it also exports an OCI image with
-`flatpak build-bundle --oci` and pushes it to `ghcr.io/frostyard/igloo`, which
-the Frostyard remote serves.
+every push and pull request. On a `v*` tag it also exports an OCI image with
+`flatpak build-bundle --oci`, pushes it to `ghcr.io/frostyard/igloo`, attests
+its digest, and then moves `latest`, which the Frostyard remote serves. The
+remote lists only digests that this workflow attested on a `v*` tag, so a push
+to `main` does not reach users until the next tag. To check a published image:
+
+```bash
+gh attestation verify oci://ghcr.io/frostyard/igloo:latest --repo frostyard/igloo \
+  --signer-workflow github.com/frostyard/igloo/.github/workflows/flatpak.yml
+```
 
 ### Develop inside the build environment
 
