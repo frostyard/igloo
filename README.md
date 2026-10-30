@@ -17,16 +17,17 @@ Christian Hergert, and keeps everything Ptyxis does. It installs as
 ## Install
 
 Igloo is published to the [Frostyard Flatpak remote](https://github.com/frostyard/flatpak-index).
-Add it once for your user, then install Igloo and update it with `flatpak update`:
+Add the remote once, for your user, then install Igloo and update it with `flatpak update`:
 
 ```bash
 flatpak remote-add --user --if-not-exists frostyard https://frostyard.github.io/flatpak-index/frostyard.flatpakrepo
 ```
 
-Snow images already have this user remote, so on Snow skip the `remote-add`.
+Snow images already have this remote, so Snow users can skip this step.
 
-Igloo uses the GNOME 51 runtime from [Flathub](https://flathub.org/setup).
-If your user installation has no Flathub remote yet, add it first:
+Igloo uses the GNOME 51 runtime from [Flathub](https://flathub.org/). A `--user` install
+gets a missing runtime only from a user remote, so add Flathub for your user
+too, before you install Igloo:
 
 ```bash
 flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
