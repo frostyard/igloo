@@ -23,8 +23,6 @@ Add the remote once, for your user, then install Igloo and update it with `flatp
 flatpak remote-add --user --if-not-exists frostyard https://frostyard.github.io/flatpak-index/frostyard.flatpakrepo
 ```
 
-Snow images already have this remote, so Snow users can skip this step.
-
 Igloo uses the GNOME 51 runtime from [Flathub](https://flathub.org/). A `--user` install
 gets a missing runtime only from a user remote, so add Flathub for your user
 too, before you install Igloo:
@@ -59,8 +57,7 @@ flatpak uninstall --user --delete-data io.github.frostyard.Igloo
 ```
 
 Removing Igloo does not remove nsl or any machine. Use `nsl remove` for
-machines. If no other app needs the Frostyard remote, remove it as well
-(on Snow, keep it: the image provides it):
+machines. If no other app needs the Frostyard remote, remove it as well:
 
 ```sh
 flatpak remote-delete --user frostyard
