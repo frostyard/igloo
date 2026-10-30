@@ -25,13 +25,19 @@ flatpak remote-add --user --if-not-exists frostyard https://frostyard.github.io/
 
 Snow images already have this user remote, so on Snow skip the `remote-add`.
 
+Igloo uses the GNOME 51 runtime from [Flathub](https://flathub.org/setup).
+If your user installation has no Flathub remote yet, add it first:
+
+```bash
+flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+```
+
+Then install Igloo:
+
 ```bash
 flatpak install --user frostyard io.github.frostyard.Igloo
 ```
 
-Igloo uses the GNOME 51 runtime from [Flathub](https://flathub.org/setup).
-If your user installation has no Flathub remote yet, add it with
-`flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo`.
 Every pull request's [CI run](https://github.com/frostyard/igloo/actions/workflows/flatpak.yml)
 also keeps a bundle, `igloo-flatpak`, to try a change before it merges:
 unzip it and run `flatpak install --user igloo.flatpak`.
