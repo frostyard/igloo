@@ -17,17 +17,21 @@ Christian Hergert, and keeps everything Ptyxis does. It installs as
 ## Install
 
 Igloo is published to the [Frostyard Flatpak remote](https://github.com/frostyard/flatpak-index).
-Add it once, then install Igloo and update it with `flatpak update`:
+Add it once for your user, then install Igloo and update it with `flatpak update`:
 
 ```bash
-flatpak remote-add --if-not-exists frostyard https://frostyard.github.io/flatpak-index/frostyard.flatpakrepo
+flatpak remote-add --user --if-not-exists frostyard https://frostyard.github.io/flatpak-index/frostyard.flatpakrepo
 ```
 
+Snow images already have this user remote, so on Snow skip the `remote-add`.
+
 ```bash
-flatpak install frostyard io.github.frostyard.Igloo
+flatpak install --user frostyard io.github.frostyard.Igloo
 ```
 
 Igloo uses the GNOME 51 runtime from [Flathub](https://flathub.org/setup).
+If your user installation has no Flathub remote yet, add it with
+`flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo`.
 Every pull request's [CI run](https://github.com/frostyard/igloo/actions/workflows/flatpak.yml)
 also keeps a bundle, `igloo-flatpak`, to try a change before it merges:
 unzip it and run `flatpak install --user igloo.flatpak`.
@@ -37,21 +41,22 @@ unzip it and run `flatpak install --user igloo.flatpak`.
 Remove Igloo with:
 
 ```sh
-flatpak uninstall io.github.frostyard.Igloo
+flatpak uninstall --user io.github.frostyard.Igloo
 ```
 
 This keeps Igloo's settings and saved sessions. To remove them too, which
 deletes `~/.var/app/io.github.frostyard.Igloo`:
 
 ```sh
-flatpak uninstall --delete-data io.github.frostyard.Igloo
+flatpak uninstall --user --delete-data io.github.frostyard.Igloo
 ```
 
 Removing Igloo does not remove nsl or any machine. Use `nsl remove` for
-machines. If no other app needs the Frostyard remote, remove it as well:
+machines. If no other app needs the Frostyard remote, remove it as well
+(on Snow, keep it: the image provides it):
 
 ```sh
-flatpak remote-delete frostyard
+flatpak remote-delete --user frostyard
 ```
 
 ## What it adds to Ptyxis
