@@ -25,6 +25,7 @@
 #include "ptyxis-application.h"
 #include "ptyxis-machine-command-dialog.h"
 #include "ptyxis-machine-create-dialog.h"
+#include "ptyxis-machine-import-dialog.h"
 #include "ptyxis-machine-util.h"
 #include "ptyxis-machines-page.h"
 #include "ptyxis-preferences-window.h"
@@ -160,6 +161,39 @@ dup_machine_names (PtyxisMachinesPage *self)
   return g_strv_builder_end (builder);
 }
 
+static char *
+dup_machine_state (PtyxisMachinesPage *self,
+                   const char         *name)
+{
+  GVariantIter iter;
+  GVariant *dict;
+
+  if (self->machines == NULL)
+    return NULL;
+
+  g_variant_iter_init (&iter, self->machines);
+
+  while ((dict = g_variant_iter_next_value (&iter)))
+    {
+      const char *value = NULL;
+      char *state = NULL;
+
+      if (g_variant_lookup (dict, "name", "&s", &value) && g_strcmp0 (value, name) == 0)
+        {
+          if (g_variant_lookup (dict, "state", "&s", &value))
+            state = g_strdup (value);
+
+          g_variant_unref (dict);
+
+          return state;
+        }
+
+      g_variant_unref (dict);
+    }
+
+  return NULL;
+}
+
 static const char *
 state_label (const char *state)
 {
@@ -266,6 +300,10 @@ create_machine_row (PtyxisMachinesPage *self,
 
       detailed = g_strdup_printf ("machines.profile('%s')", name);
       g_menu_append (config_section, _("Edit _Profile…"), detailed);
+      g_clear_pointer (&detailed, g_free);
+
+      detailed = g_strdup_printf ("machines.export('%s')", name);
+      g_menu_append (config_section, _("_Export…"), detailed);
       g_clear_pointer (&detailed, g_free);
     }
 
@@ -753,6 +791,371 @@ ptyxis_machines_page_open_action (GtkWidget  *widget,
   ptyxis_application_open_container (PTYXIS_APPLICATION_DEFAULT, container_id);
 }
 
+typedef struct
+{
+  PtyxisMachinesPage *self;
+  char               *name;
+  guint               stop : 1;
+} ExportState;
+
+static void
+export_state_free (ExportState *state)
+{
+  g_clear_object (&state->self);
+  g_clear_pointer (&state->name, g_free);
+  g_free (state);
+}
+
+static void
+ptyxis_machines_page_export_path_cb (GObject      *object,
+                                     GAsyncResult *result,
+                                     gpointer      user_data)
+{
+  ExportState *state = user_data;
+  PtyxisMachinesPage *self = state->self;
+  g_autoptr(GError) error = NULL;
+  g_autofree char *host_path = NULL;
+  g_autofree char *heading = NULL;
+  g_autofree char *title = NULL;
+  g_autofree char *running = NULL;
+  g_autofree char *succeeded = NULL;
+  g_autofree char *failed = NULL;
+  PtyxisMachineCommandDialog *dialog;
+  const char *path;
+
+  g_assert (PTYXIS_IS_MACHINES_PAGE (self));
+
+  host_path = ptyxis_machine_host_path_finish (result, &error);
+
+  if (host_path == NULL)
+    {
+      if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        {
+          /* translators: %s is a machine name */
+          heading = g_strdup_printf (_("Could not export %s"), state->name);
+          ptyxis_machines_page_show_error (self, heading, error->message);
+        }
+
+      export_state_free (state);
+      return;
+    }
+
+  if ((path = nsl_path (self)) == NULL)
+    {
+      export_state_free (state);
+      return;
+    }
+
+  {
+    /* Stop the machine only when the user agreed to; nsl refuses to export
+     * a machine that runs, so a stale state never stops one unasked.
+     */
+    const char * const stop_argv[] = {
+      "/bin/sh", "-c", "\"$0\" stop \"$1\" && exec \"$0\" export \"$1\" \"$2\"",
+      path, state->name, host_path, NULL
+    };
+    const char * const export_argv[] = { path, "export", state->name, host_path, NULL };
+
+    /* translators: %s is a machine name */
+    title = g_strdup_printf (_("Exporting %s"), state->name);
+    if (state->stop)
+      running = g_strdup_printf (_("Stopping and exporting %s. A large machine can take several minutes."), state->name);
+    else
+      running = g_strdup_printf (_("Exporting %s. A large machine can take several minutes."), state->name);
+    succeeded = g_strdup_printf (_("%s was exported"), state->name);
+    failed = g_strdup_printf (_("Could not export %s"), state->name);
+
+    dialog = ptyxis_machines_page_present_command (self, title, state->stop ? stop_argv : export_argv);
+    ptyxis_machine_command_dialog_set_messages (dialog, running, succeeded, failed);
+  }
+
+  export_state_free (state);
+}
+
+static void
+ptyxis_machines_page_export_save_cb (GObject      *object,
+                                     GAsyncResult *result,
+                                     gpointer      user_data)
+{
+  ExportState *state = user_data;
+  PtyxisMachinesPage *self = state->self;
+  g_autoptr(GFile) file = NULL;
+  g_autoptr(GError) error = NULL;
+  g_autofree char *heading = NULL;
+
+  g_assert (PTYXIS_IS_MACHINES_PAGE (self));
+
+  file = gtk_file_dialog_save_finish (GTK_FILE_DIALOG (object), result, &error);
+
+  if (file == NULL)
+    {
+      if (g_error_matches (error, GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_DISMISSED) ||
+          g_error_matches (error, GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_CANCELLED) ||
+          g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        {
+          export_state_free (state);
+          return;
+        }
+
+      /* translators: %s is a machine name */
+      heading = g_strdup_printf (_("Could not export %s"), state->name);
+      ptyxis_machines_page_show_error (self, heading, error->message);
+
+      export_state_free (state);
+      return;
+    }
+
+  /* nsl stages the archive beside the file and publishes it with a hard link */
+  if (g_file_query_exists (file, NULL))
+    {
+      ptyxis_machines_page_show_error (self,
+                                       _("Choose a New File"),
+                                       _("nsl never replaces a file. Export to a name that does not exist yet."));
+
+      export_state_free (state);
+      return;
+    }
+
+  ptyxis_machine_host_path_async (file,
+                                  self->cancellable,
+                                  ptyxis_machines_page_export_path_cb,
+                                  state);
+}
+
+static void
+ptyxis_machines_page_export_choose_file (PtyxisMachinesPage *self,
+                                         const char         *name,
+                                         gboolean            stop)
+{
+  g_autoptr(GtkFileDialog) dialog = NULL;
+  g_autoptr(GDateTime) now = NULL;
+  g_autofree char *title = NULL;
+  g_autofree char *file_name = NULL;
+  ExportState *state;
+  GtkRoot *root;
+
+  g_assert (PTYXIS_IS_MACHINES_PAGE (self));
+
+  state = g_new0 (ExportState, 1);
+  state->self = g_object_ref (self);
+  state->name = g_strdup (name);
+  state->stop = !!stop;
+
+  now = g_date_time_new_now_local ();
+  file_name = ptyxis_machine_export_file_name (name, now);
+
+  /* translators: %s is a machine name */
+  title = g_strdup_printf (_("Export %s"), name);
+
+  dialog = gtk_file_dialog_new ();
+  gtk_file_dialog_set_title (dialog, title);
+  gtk_file_dialog_set_accept_label (dialog, _("_Export"));
+  gtk_file_dialog_set_initial_name (dialog, file_name);
+  gtk_file_dialog_set_modal (dialog, TRUE);
+
+  root = gtk_widget_get_root (GTK_WIDGET (self));
+
+  gtk_file_dialog_save (dialog,
+                        GTK_IS_WINDOW (root) ? GTK_WINDOW (root) : NULL,
+                        self->cancellable,
+                        ptyxis_machines_page_export_save_cb,
+                        state);
+}
+
+static void
+ptyxis_machines_page_export_response_cb (AdwAlertDialog *alert,
+                                         const char     *response,
+                                         gpointer        user_data)
+{
+  PtyxisMachinesPage *self = PTYXIS_MACHINES_PAGE (user_data);
+  const char *name = g_object_get_data (G_OBJECT (alert), "MACHINE_NAME");
+
+  g_assert (PTYXIS_IS_MACHINES_PAGE (self));
+
+  if (g_strcmp0 (response, "export") != 0 || name == NULL)
+    return;
+
+  ptyxis_machines_page_export_choose_file (self, name, TRUE);
+}
+
+static void
+ptyxis_machines_page_export_action (GtkWidget  *widget,
+                                    const char *action_name,
+                                    GVariant   *param)
+{
+  PtyxisMachinesPage *self = (PtyxisMachinesPage *)widget;
+  const char *name = g_variant_get_string (param, NULL);
+  g_autofree char *state = dup_machine_state (self, name);
+  g_autofree char *heading = NULL;
+  AdwDialog *alert;
+
+  g_assert (PTYXIS_IS_MACHINES_PAGE (self));
+
+  /* nsl exports only a stopped machine */
+  if (g_strcmp0 (state, "running") != 0)
+    {
+      ptyxis_machines_page_export_choose_file (self, name, FALSE);
+      return;
+    }
+
+  /* translators: %s is a machine name */
+  heading = g_strdup_printf (_("Export %s?"), name);
+
+  alert = adw_alert_dialog_new (heading, NULL);
+  /* translators: %s is a machine name */
+  adw_alert_dialog_format_body (ADW_ALERT_DIALOG (alert),
+                                _("%s must stop before it can be exported. Programs running in it will close."),
+                                name);
+  adw_alert_dialog_add_responses (ADW_ALERT_DIALOG (alert),
+                                  "cancel", _("_Cancel"),
+                                  "export", _("_Stop and Export"),
+                                  NULL);
+  adw_alert_dialog_set_response_appearance (ADW_ALERT_DIALOG (alert), "export", ADW_RESPONSE_SUGGESTED);
+  adw_alert_dialog_set_default_response (ADW_ALERT_DIALOG (alert), "cancel");
+  adw_alert_dialog_set_close_response (ADW_ALERT_DIALOG (alert), "cancel");
+  g_object_set_data_full (G_OBJECT (alert), "MACHINE_NAME", g_strdup (name), g_free);
+
+  g_signal_connect_object (alert,
+                           "response",
+                           G_CALLBACK (ptyxis_machines_page_export_response_cb),
+                           self,
+                           0);
+
+  adw_dialog_present (alert, GTK_WIDGET (self));
+}
+
+static void
+ptyxis_machines_page_import_cb (PtyxisMachinesPage        *self,
+                                const char * const        *argv,
+                                const char                *name,
+                                PtyxisMachineImportDialog *import)
+{
+  g_autofree char *title = NULL;
+  g_autofree char *running = NULL;
+  g_autofree char *succeeded = NULL;
+  g_autofree char *failed = NULL;
+  g_autofree char *container_id = NULL;
+  PtyxisMachineCommandDialog *dialog;
+
+  g_assert (PTYXIS_IS_MACHINES_PAGE (self));
+
+  /* translators: %s is a machine name */
+  title = g_strdup_printf (_("Importing %s"), name);
+  running = g_strdup_printf (_("Verifying and importing %s. A large archive can take several minutes."), name);
+  succeeded = g_strdup_printf (_("%s is ready"), name);
+  failed = g_strdup_printf (_("Could not import %s"), name);
+  container_id = ptyxis_machine_dup_container_id (name);
+
+  dialog = ptyxis_machines_page_present_command (self, title, argv);
+  ptyxis_machine_command_dialog_set_messages (dialog, running, succeeded, failed);
+  ptyxis_machine_command_dialog_set_open_container (dialog, container_id);
+}
+
+static void
+ptyxis_machines_page_import_path_cb (GObject      *object,
+                                     GAsyncResult *result,
+                                     gpointer      user_data)
+{
+  g_autoptr(PtyxisMachinesPage) self = user_data;
+  g_autoptr(GError) error = NULL;
+  g_autofree char *host_path = NULL;
+  g_auto(GStrv) names = NULL;
+  PtyxisMachineImportDialog *dialog;
+  const char *path;
+
+  g_assert (PTYXIS_IS_MACHINES_PAGE (self));
+
+  host_path = ptyxis_machine_host_path_finish (result, &error);
+
+  if (host_path == NULL)
+    {
+      if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        ptyxis_machines_page_show_error (self, _("Could not import a machine"), error->message);
+
+      return;
+    }
+
+  if ((path = nsl_path (self)) == NULL)
+    return;
+
+  names = dup_machine_names (self);
+  dialog = ptyxis_machine_import_dialog_new (path, (const char * const *)names, host_path);
+  g_signal_connect_object (dialog,
+                           "import",
+                           G_CALLBACK (ptyxis_machines_page_import_cb),
+                           self,
+                           G_CONNECT_SWAPPED);
+  adw_dialog_present (ADW_DIALOG (dialog), GTK_WIDGET (self));
+}
+
+static void
+ptyxis_machines_page_import_open_cb (GObject      *object,
+                                     GAsyncResult *result,
+                                     gpointer      user_data)
+{
+  g_autoptr(PtyxisMachinesPage) self = user_data;
+  g_autoptr(GFile) file = NULL;
+  g_autoptr(GError) error = NULL;
+
+  g_assert (PTYXIS_IS_MACHINES_PAGE (self));
+
+  file = gtk_file_dialog_open_finish (GTK_FILE_DIALOG (object), result, &error);
+
+  if (file == NULL)
+    {
+      if (g_error_matches (error, GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_DISMISSED) ||
+          g_error_matches (error, GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_CANCELLED) ||
+          g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        return;
+
+      ptyxis_machines_page_show_error (self, _("Could not import a machine"), error->message);
+      return;
+    }
+
+  ptyxis_machine_host_path_async (file,
+                                  self->cancellable,
+                                  ptyxis_machines_page_import_path_cb,
+                                  g_object_ref (self));
+}
+
+static void
+ptyxis_machines_page_import_action (GtkWidget  *widget,
+                                    const char *action_name,
+                                    GVariant   *param)
+{
+  PtyxisMachinesPage *self = (PtyxisMachinesPage *)widget;
+  g_autoptr(GtkFileDialog) dialog = NULL;
+  g_autoptr(GListStore) filters = g_list_store_new (GTK_TYPE_FILE_FILTER);
+  g_autoptr(GtkFileFilter) archives = gtk_file_filter_new ();
+  g_autoptr(GtkFileFilter) all_files = gtk_file_filter_new ();
+  GtkRoot *root;
+
+  g_assert (PTYXIS_IS_MACHINES_PAGE (self));
+
+  gtk_file_filter_set_name (archives, _("Machine Archives"));
+  gtk_file_filter_add_suffix (archives, "tar");
+  g_list_store_append (filters, archives);
+
+  gtk_file_filter_set_name (all_files, _("All Files"));
+  gtk_file_filter_add_pattern (all_files, "*");
+  g_list_store_append (filters, all_files);
+
+  dialog = gtk_file_dialog_new ();
+  gtk_file_dialog_set_title (dialog, _("Import Machine"));
+  gtk_file_dialog_set_accept_label (dialog, _("_Choose"));
+  gtk_file_dialog_set_modal (dialog, TRUE);
+  gtk_file_dialog_set_filters (dialog, G_LIST_MODEL (filters));
+  gtk_file_dialog_set_default_filter (dialog, archives);
+
+  root = gtk_widget_get_root (GTK_WIDGET (self));
+
+  gtk_file_dialog_open (dialog,
+                        GTK_IS_WINDOW (root) ? GTK_WINDOW (root) : NULL,
+                        self->cancellable,
+                        ptyxis_machines_page_import_open_cb,
+                        g_object_ref (self));
+}
+
 static void
 ptyxis_machines_page_start_action (GtkWidget  *widget,
                                    const char *action_name,
@@ -885,8 +1288,8 @@ ptyxis_machines_page_remove_action (GtkWidget  *widget,
 
   alert = adw_alert_dialog_new (heading, NULL);
   adw_alert_dialog_format_body (ADW_ALERT_DIALOG (alert),
-                                _("%s and everything stored only inside it, including its home directory and installed packages, will be permanently deleted. Files on this computer under /mnt/host are not affected.\n\nTo keep a backup, export it first with “nsl export %s FILE”."),
-                                name, name);
+                                _("%s and everything stored only inside it, including its home directory and installed packages, will be permanently deleted. Files on this computer under /mnt/host are not affected.\n\nTo keep a backup, cancel and choose Export… in its menu first."),
+                                name);
   adw_alert_dialog_add_responses (ADW_ALERT_DIALOG (alert),
                                   "cancel", _("_Cancel"),
                                   "remove", _("_Remove"),
@@ -1190,6 +1593,7 @@ ptyxis_machines_page_class_init (PtyxisMachinesPageClass *klass)
   gtk_widget_class_bind_template_child (widget_class, PtyxisMachinesPage, vm_memory);
 
   gtk_widget_class_install_action (widget_class, "machines.create", NULL, ptyxis_machines_page_create_action);
+  gtk_widget_class_install_action (widget_class, "machines.import", NULL, ptyxis_machines_page_import_action);
   gtk_widget_class_install_action (widget_class, "machines.refresh", NULL, ptyxis_machines_page_refresh_action);
   gtk_widget_class_install_action (widget_class, "machines.rescan", NULL, ptyxis_machines_page_rescan_action);
   gtk_widget_class_install_action (widget_class, "machines.doctor", NULL, ptyxis_machines_page_doctor_action);
@@ -1203,6 +1607,7 @@ ptyxis_machines_page_class_init (PtyxisMachinesPageClass *klass)
   gtk_widget_class_install_action (widget_class, "machines.default", "s", ptyxis_machines_page_default_action);
   gtk_widget_class_install_action (widget_class, "machines.profile", "s", ptyxis_machines_page_profile_action);
   gtk_widget_class_install_action (widget_class, "machines.remove", "s", ptyxis_machines_page_remove_action);
+  gtk_widget_class_install_action (widget_class, "machines.export", "s", ptyxis_machines_page_export_action);
 }
 
 static void

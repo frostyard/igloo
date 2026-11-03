@@ -73,6 +73,22 @@
             </child>
             <child>
               <object class="GtkButton">
+                <property name="action-name">machines.import</property>
+                <property name="tooltip-text" translatable="yes">Import a machine from an archive</property>
+                <property name="child">
+                  <object class="AdwButtonContent">
+                    <property name="icon-name">document-open-symbolic</property>
+                    <property name="label" translatable="yes">_Import…</property>
+                    <property name="use-underline">true</property>
+                  </object>
+                </property>
+                <style>
+                  <class name="flat"/>
+                </style>
+              </object>
+            </child>
+            <child>
+              <object class="GtkButton">
                 <property name="action-name">machines.create</property>
                 <property name="child">
                   <object class="AdwButtonContent">
@@ -120,6 +136,17 @@
                     <style>
                       <class name="pill"/>
                       <class name="suggested-action"/>
+                    </style>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton">
+                    <property name="label" translatable="yes">_Import a Machine…</property>
+                    <property name="use-underline">true</property>
+                    <property name="halign">center</property>
+                    <property name="action-name">machines.import</property>
+                    <style>
+                      <class name="pill"/>
                     </style>
                   </object>
                 </child>

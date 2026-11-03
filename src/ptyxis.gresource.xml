@@ -8,6 +8,7 @@
     <file preprocess="xml-stripblanks">ptyxis-inspector.ui</file>
     <file preprocess="xml-stripblanks">ptyxis-machine-command-dialog.ui</file>
     <file preprocess="xml-stripblanks">ptyxis-machine-create-dialog.ui</file>
+    <file preprocess="xml-stripblanks">ptyxis-machine-import-dialog.ui</file>
     <file preprocess="xml-stripblanks">ptyxis-machines-page.ui</file>
     <file preprocess="xml-stripblanks">ptyxis-menu-row.ui</file>
     <file preprocess="xml-stripblanks">ptyxis-palette-preview.ui</file>

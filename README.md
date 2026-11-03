@@ -77,15 +77,22 @@ flatpak remote-delete --user frostyard
     catalogue, isolation, default and an optional username, then runs
     `nsl create` in a terminal so downloads and verification are visible, and
     offers to open the new machine;
+  - *Import Machine…* asks for an archive, then a name and isolation, then
+    runs `nsl import` in a terminal and offers to open the machine;
   - per machine: *Open Terminal*, *Start*/*Stop*, *Make Default*,
     *Edit Profile…* (creates or opens a profile whose default container is the
-    machine, for its own palette, font and command) and *Remove…*
-    (`nsl stop` then `nsl remove --yes`, after a confirmation);
+    machine, for its own palette, font and command), *Export…* (asks for a
+    file, NAME-DATE.tar by default, then runs `nsl export NAME FILE` in a
+    terminal; a running machine is stopped first, after a confirmation; nsl
+    never replaces a file) and *Remove…* (`nsl stop` then
+    `nsl remove --yes`, after a confirmation);
   - *Resources*: shared VM memory and processors, autostart, idle timeout and
     isolated VM resources, written to `nsl.conf`;
   - *Host*: `nsl doctor`, `nsl update` and `nsl shutdown`.
 
-If nsl is not installed, the page links to its installation guide.
+If nsl is not installed, the page links to its installation guide. In the
+Flatpak, a file outside the folders Igloo can see comes from the document
+portal, and Igloo gives nsl its real path on the computer.
 
 ## Requirements
 
@@ -214,8 +221,6 @@ output. The *Resources* rows take their ranges from `config --json`.
 
 - Machine states on the Machines page refresh when the page is shown, after an
   action and after starting a terminal, not continuously.
-- Export and import are not in the interface yet; use `nsl export` and
-  `nsl import`.
 
 ## Relationship to Ptyxis
 

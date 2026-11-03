@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+ Copyright 2026 Brian Ketelsen
+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <http://www.gnu.org/licenses/>.
+-->
+<interface>
+  <template class="PtyxisMachineImportDialog" parent="AdwDialog">
+    <property name="title" translatable="yes">Import Machine</property>
+    <property name="content-width">520</property>
+    <property name="default-widget">import_button</property>
+    <property name="focus-widget">name_row</property>
+    <property name="child">
+      <object class="AdwToolbarView">
+        <child type="top">
+          <object class="AdwHeaderBar">
+            <property name="show-start-title-buttons">false</property>
+            <property name="show-end-title-buttons">false</property>
+            <child type="start">
+              <object class="GtkButton">
+                <property name="label" translatable="yes">_Cancel</property>
+                <property name="use-underline">true</property>
+                <signal name="clicked" handler="ptyxis_machine_import_dialog_cancel_cb" swapped="true"/>
+              </object>
+            </child>
+            <child type="end">
+              <object class="GtkButton" id="import_button">
+                <property name="label" translatable="yes">_Import</property>
+                <property name="use-underline">true</property>
+                <property name="sensitive">false</property>
+                <signal name="clicked" handler="ptyxis_machine_import_dialog_import_cb" swapped="true"/>
+                <style>
+                  <class name="suggested-action"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+        <property name="content">
+          <object class="AdwPreferencesPage">
+            <child>
+              <object class="AdwPreferencesGroup">
+                <property name="description" translatable="yes">nsl checks the archive before the machine is available. Import only archives you trust, or import them isolated.</property>
+                <child>
+                  <object class="AdwActionRow" id="archive_row">
+                    <property name="title" translatable="yes">Archive</property>
+                    <property name="subtitle-selectable">true</property>
+                    <property name="use-markup">false</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwEntryRow" id="name_row">
+                    <property name="title" translatable="yes">Name</property>
+                    <property name="activates-default">true</property>
+                    <signal name="changed" handler="ptyxis_machine_import_dialog_name_changed_cb" swapped="true"/>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="AdwPreferencesGroup" id="message_group">
+                <property name="visible">false</property>
+                <child>
+                  <object class="GtkLabel" id="message_label">
+                    <property name="xalign">0</property>
+                    <property name="wrap">true</property>
+                    <style>
+                      <class name="error"/>
+                    </style>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="AdwPreferencesGroup">
+                <child>
+                  <object class="AdwSwitchRow" id="isolated_row">
+                    <property name="title" translatable="yes">Isolated</property>
+                    <property name="subtitle" translatable="yes">Runs in a VM of its own with no access to your files, desktop or host actions. Use it for software you do not trust.</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </property>
+      </object>
+    </property>
+  </template>
+</interface>
