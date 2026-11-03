@@ -15,6 +15,7 @@ ptyxis_sources = [
   'ptyxis-inspector.c',
   'ptyxis-machine-command-dialog.c',
   'ptyxis-machine-create-dialog.c',
+  'ptyxis-machine-import-dialog.c',
   'ptyxis-machine-util.c',
   'ptyxis-machines-page.c',
   'ptyxis-menu-row.c',

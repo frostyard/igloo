@@ -17,6 +17,7 @@ testsuite_c_args = [
 testsuite = {
   'test-nsl' : {},
   'test-podman' : {},
+  'test-machine-util' : {'sources': files('../src/ptyxis-machine-util.c')},
 }
 
 testsuite_deps = [
@@ -25,10 +26,10 @@ testsuite_deps = [
 
 foreach test, params: testsuite
   test_exe = executable(test,
-    ['@0@.c'.format(test)] + ptyxis_agent_sources,
+    ['@0@.c'.format(test)] + params.get('sources', ptyxis_agent_sources),
                  c_args: testsuite_c_args,
            dependencies: testsuite_deps,
-    include_directories: [include_directories('..'), include_directories('.'), include_directories('../agent')],
+    include_directories: [include_directories('..'), include_directories('.'), include_directories('../agent'), include_directories('../src')],
   )
   if not params.get('skip', false)
     test(test, test_exe, env: test_env)

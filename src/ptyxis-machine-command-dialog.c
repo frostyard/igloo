@@ -515,6 +515,13 @@ ptyxis_machine_command_dialog_set_messages (PtyxisMachineCommandDialog *self,
   g_set_str (&self->running_message, running);
   g_set_str (&self->succeeded_message, succeeded);
   g_set_str (&self->failed_message, failed);
+
+  /* Presenting the dialog starts the command, often before the messages
+   * are set, so show the running message now.
+   */
+  if (self->started && !self->finished)
+    gtk_label_set_label (self->status_label,
+                         self->running_message ? self->running_message : _("Running…"));
 }
 
 /**

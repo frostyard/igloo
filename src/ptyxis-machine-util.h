@@ -20,7 +20,7 @@
 
 #pragma once
 
-#include <glib.h>
+#include <gio/gio.h>
 
 G_BEGIN_DECLS
 
@@ -32,6 +32,21 @@ char     *ptyxis_machine_describe_image       (const char         *build);
 char     *ptyxis_machine_describe_selectors   (const char * const *selectors);
 char     *ptyxis_machine_suggest_name         (const char         *selector,
                                                const char * const *existing);
+char     *ptyxis_machine_suggest_import_name  (const char         *file_name,
+                                               const char * const *existing);
+char     *ptyxis_machine_export_file_name     (const char         *name,
+                                               GDateTime          *now);
+char     *ptyxis_machine_split_document_path  (const char         *path,
+                                               const char         *runtime_dir,
+                                               char              **remainder);
+char     *ptyxis_machine_compose_host_path    (const char         *host_document_path,
+                                               const char         *remainder);
+void      ptyxis_machine_host_path_async      (GFile              *file,
+                                               GCancellable       *cancellable,
+                                               GAsyncReadyCallback callback,
+                                               gpointer            user_data);
+char     *ptyxis_machine_host_path_finish     (GAsyncResult       *result,
+                                               GError            **error);
 char     *ptyxis_machine_dup_container_id     (const char         *name);
 
 G_END_DECLS

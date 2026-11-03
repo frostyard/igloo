@@ -23,8 +23,13 @@
 #include <string.h>
 
 #include <glib/gi18n.h>
+#include <gio/gio.h>
 
 #include "ptyxis-machine-util.h"
+
+#define DOCUMENTS_BUS_NAME "org.freedesktop.portal.Documents"
+#define DOCUMENTS_OBJECT_PATH "/org/freedesktop/portal/documents"
+#define DOCUMENTS_INTERFACE "org.freedesktop.portal.Documents"
 
 static const struct {
   const char *id;
@@ -279,6 +284,363 @@ ptyxis_machine_suggest_name (const char         *selector,
     }
 
   return g_strdup ("machine");
+}
+
+/**
+ * ptyxis_machine_export_file_name:
+ * @name: a machine name
+ * @now: (nullable): the time to name the file after
+ *
+ * Returns: (transfer full): a file name such as "dev-2026-11-02.tar"
+ */
+char *
+ptyxis_machine_export_file_name (const char *name,
+                                 GDateTime  *now)
+{
+  g_autoptr(GDateTime) local = NULL;
+  g_autofree char *date = NULL;
+
+  g_return_val_if_fail (name != NULL, NULL);
+
+  if (now == NULL)
+    now = local = g_date_time_new_now_local ();
+
+  if (now == NULL)
+    return g_strdup_printf ("%s.tar", name);
+
+  date = g_date_time_format (now, "%Y-%m-%d");
+
+  return g_strdup_printf ("%s-%s.tar", name, date);
+}
+
+/* Matches the "YYYY-MM-DD" of an exported file name */
+static gboolean
+is_date (const char *str)
+{
+  if (str == NULL || strlen (str) != strlen ("YYYY-MM-DD"))
+    return FALSE;
+
+  for (guint i = 0; str[i]; i++)
+    {
+      if (i == 4 || i == 7)
+        {
+          if (str[i] != '-')
+            return FALSE;
+        }
+      else if (!g_ascii_isdigit (str[i]))
+        return FALSE;
+    }
+
+  return TRUE;
+}
+
+/**
+ * ptyxis_machine_suggest_import_name:
+ * @file_name: the archive that is imported, such as "dev-2026-09-28.tar"
+ * @existing: (nullable): names already in use
+ *
+ * Suggests an unused machine name for an archive.
+ *
+ * Returns: (transfer full): a valid machine name
+ */
+char *
+ptyxis_machine_suggest_import_name (const char         *file_name,
+                                    const char * const *existing)
+{
+  g_autofree char *base_name = NULL;
+  g_autofree char *lower = NULL;
+  g_autofree char *base = NULL;
+  g_autofree char *numbered = NULL;
+  gsize len;
+
+  g_return_val_if_fail (file_name != NULL, NULL);
+
+  base_name = g_path_get_basename (file_name);
+  lower = g_ascii_strdown (base_name, -1);
+
+  if (strlen (base_name) > strlen (".tar") && g_str_has_suffix (lower, ".tar"))
+    base_name[strlen (base_name) - strlen (".tar")] = 0;
+
+  /* Exported files end with the date they were made */
+  len = strlen (base_name);
+  if (len > strlen ("-YYYY-MM-DD") &&
+      base_name[len - strlen ("-YYYY-MM-DD")] == '-' &&
+      is_date (base_name + len - strlen ("YYYY-MM-DD")))
+    base_name[len - strlen ("-YYYY-MM-DD")] = 0;
+
+  base = sanitize (base_name);
+
+  if (is_available (base, existing))
+    return g_steal_pointer (&base);
+
+  numbered = ptyxis_machine_is_valid_name (base) ? g_strdup (base) : g_strdup ("machine");
+
+  for (guint i = 2; i < 1000; i++)
+    {
+      g_autofree char *name = g_strdup_printf ("%.20s-%u", numbered, i);
+
+      if (is_available (name, existing))
+        return g_steal_pointer (&name);
+    }
+
+  return g_strdup (numbered);
+}
+
+/**
+ * ptyxis_machine_split_document_path:
+ * @path: a path that may name a document portal file
+ * @runtime_dir: the user's runtime directory, such as "/run/user/1000"
+ * @remainder: (out) (optional) (nullable) (transfer full): the path below
+ *   the document
+ *
+ * Splits "/run/user/1000/doc/abc/dir/x.tar" into the document ID "abc" and
+ * the remainder "dir/x.tar".
+ *
+ * Returns: (transfer full) (nullable): the document ID, or %NULL
+ */
+char *
+ptyxis_machine_split_document_path (const char  *path,
+                                    const char  *runtime_dir,
+                                    char       **remainder)
+{
+  g_autofree char *prefix = NULL;
+  const char *rest;
+  const char *slash;
+
+  if (remainder != NULL)
+    *remainder = NULL;
+
+  if (path == NULL || runtime_dir == NULL || runtime_dir[0] == 0)
+    return NULL;
+
+  prefix = g_build_filename (runtime_dir, "doc", NULL);
+
+  if (!g_str_has_prefix (path, prefix))
+    return NULL;
+
+  rest = path + strlen (prefix);
+
+  if (rest[0] != '/')
+    return NULL;
+
+  rest++;
+  slash = strchr (rest, '/');
+
+  if (slash == NULL || slash == rest || slash[1] == 0)
+    return NULL;
+
+  if (remainder != NULL)
+    *remainder = g_strdup (slash + 1);
+
+  return g_strndup (rest, slash - rest);
+}
+
+/**
+ * ptyxis_machine_compose_host_path:
+ * @host_document_path: the host path of the document, such as "/srv/dir"
+ * @remainder: (nullable): the path below the document, such as "dir/sub/f"
+ *
+ * Returns: (transfer full): the host path of the file, such as
+ *   "/srv/dir/sub/f"
+ */
+char *
+ptyxis_machine_compose_host_path (const char *host_document_path,
+                                  const char *remainder)
+{
+  g_autofree char *dirname = NULL;
+
+  g_return_val_if_fail (host_document_path != NULL, NULL);
+
+  if (remainder == NULL || remainder[0] == 0)
+    return g_strdup (host_document_path);
+
+  dirname = g_path_get_dirname (host_document_path);
+
+  return g_build_filename (dirname, remainder, NULL);
+}
+
+typedef struct
+{
+  char *docid;
+  char *remainder;
+} HostPath;
+
+static void
+host_path_free (HostPath *data)
+{
+  g_clear_pointer (&data->docid, g_free);
+  g_clear_pointer (&data->remainder, g_free);
+  g_free (data);
+}
+
+static void
+host_path_return_error (GTask *task)
+{
+  g_task_return_new_error (task,
+                           G_IO_ERROR,
+                           G_IO_ERROR_FAILED,
+                           "%s",
+                           _("Igloo could not find where this file is on the computer. Choose a file in your home folder."));
+}
+
+static void
+host_path_call_cb (GObject      *object,
+                   GAsyncResult *result,
+                   gpointer      user_data)
+{
+  g_autoptr(GTask) task = user_data;
+  HostPath *data = g_task_get_task_data (task);
+  g_autoptr(GVariant) reply = NULL;
+  g_autoptr(GVariant) paths = NULL;
+  g_autoptr(GVariant) value = NULL;
+  g_autoptr(GError) error = NULL;
+  g_autofree char *host_path = NULL;
+  const char *host_document_path;
+
+  reply = g_dbus_connection_call_finish (G_DBUS_CONNECTION (object), result, &error);
+
+  if (reply == NULL)
+    {
+      if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        g_task_return_error (task, g_steal_pointer (&error));
+      else
+        host_path_return_error (task);
+
+      return;
+    }
+
+  g_variant_get (reply, "(@a{say})", &paths);
+  value = g_variant_lookup_value (paths, data->docid, G_VARIANT_TYPE_BYTESTRING);
+
+  if (value == NULL)
+    {
+      host_path_return_error (task);
+      return;
+    }
+
+  host_document_path = g_variant_get_bytestring (value);
+
+  if (host_document_path == NULL || host_document_path[0] == 0)
+    {
+      host_path_return_error (task);
+      return;
+    }
+
+  host_path = ptyxis_machine_compose_host_path (host_document_path, data->remainder);
+
+  g_task_return_pointer (task, g_steal_pointer (&host_path), g_free);
+}
+
+static void
+host_path_bus_cb (GObject      *object,
+                  GAsyncResult *result,
+                  gpointer      user_data)
+{
+  g_autoptr(GTask) task = user_data;
+  HostPath *data = g_task_get_task_data (task);
+  g_autoptr(GDBusConnection) connection = NULL;
+  g_autoptr(GError) error = NULL;
+  const char *documents[] = { NULL, NULL };
+
+  connection = g_bus_get_finish (result, &error);
+
+  if (connection == NULL)
+    {
+      if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        g_task_return_error (task, g_steal_pointer (&error));
+      else
+        host_path_return_error (task);
+
+      return;
+    }
+
+  documents[0] = data->docid;
+
+  g_dbus_connection_call (connection,
+                          DOCUMENTS_BUS_NAME,
+                          DOCUMENTS_OBJECT_PATH,
+                          DOCUMENTS_INTERFACE,
+                          "GetHostPaths",
+                          g_variant_new ("(^as)", documents),
+                          G_VARIANT_TYPE ("(a{say})"),
+                          G_DBUS_CALL_FLAGS_NONE,
+                          -1,
+                          g_task_get_cancellable (task),
+                          host_path_call_cb,
+                          g_steal_pointer (&task));
+}
+
+/**
+ * ptyxis_machine_host_path_async:
+ * @file: a file that the file chooser returned
+ * @cancellable: (nullable): a #GCancellable
+ * @callback: a callback to call when the path is known
+ * @user_data: data for @callback
+ *
+ * Finds the path of @file on the computer. A file the Flatpak sees through
+ * the document portal, such as "/run/user/1000/doc/abc/x.tar", becomes its
+ * host path, such as "/var/tmp/x.tar".
+ */
+void
+ptyxis_machine_host_path_async (GFile               *file,
+                                GCancellable        *cancellable,
+                                GAsyncReadyCallback  callback,
+                                gpointer             user_data)
+{
+  g_autoptr(GTask) task = NULL;
+  g_autofree char *path = NULL;
+  g_autofree char *docid = NULL;
+  g_autofree char *remainder = NULL;
+  HostPath *data;
+
+  g_return_if_fail (G_IS_FILE (file));
+
+  task = g_task_new (file, cancellable, callback, user_data);
+  g_task_set_source_tag (task, ptyxis_machine_host_path_async);
+
+  path = g_file_get_path (file);
+
+  if (path == NULL)
+    {
+      g_task_return_new_error (task,
+                               G_IO_ERROR,
+                               G_IO_ERROR_NOT_SUPPORTED,
+                               "%s",
+                               _("Choose a file on this computer."));
+      return;
+    }
+
+  docid = ptyxis_machine_split_document_path (path, g_get_user_runtime_dir (), &remainder);
+
+  /* A path the app can see is already the host path */
+  if (docid == NULL)
+    {
+      g_task_return_pointer (task, g_strdup (path), g_free);
+      return;
+    }
+
+  data = g_new0 (HostPath, 1);
+  data->docid = g_steal_pointer (&docid);
+  data->remainder = g_steal_pointer (&remainder);
+  g_task_set_task_data (task, data, (GDestroyNotify)host_path_free);
+
+  g_bus_get (G_BUS_TYPE_SESSION, cancellable, host_path_bus_cb, g_steal_pointer (&task));
+}
+
+/**
+ * ptyxis_machine_host_path_finish:
+ * @result: the result of ptyxis_machine_host_path_async()
+ * @error: a location for an error
+ *
+ * Returns: (transfer full) (nullable): the path of the file on the computer
+ */
+char *
+ptyxis_machine_host_path_finish (GAsyncResult  *result,
+                                 GError       **error)
+{
+  g_return_val_if_fail (G_IS_TASK (result), NULL);
+
+  return g_task_propagate_pointer (G_TASK (result), error);
 }
 
 char *
