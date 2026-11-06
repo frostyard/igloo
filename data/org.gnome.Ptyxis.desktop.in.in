@@ -18,6 +18,7 @@ X-TerminalArgTitle=--title
 X-TerminalArgDir=--working-directory
 X-TerminalArgAppId=--gapplication-app-id
 X-KDE-AuthorizeAction=shell_access
+@APP_RENAMED_FROM@
 
 [Desktop Action new-window]
 Name=New Window

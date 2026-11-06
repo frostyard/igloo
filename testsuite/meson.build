@@ -18,6 +18,7 @@ testsuite = {
   'test-nsl' : {},
   'test-podman' : {},
   'test-machine-util' : {'sources': files('../src/ptyxis-machine-util.c')},
+  'test-igloo-migration' : {'sources': files('../src/ptyxis-igloo-migration.c')},
 }
 
 testsuite_deps = [

@@ -8,7 +8,7 @@ Contracts: none in this repository; the Frostyard remote's rules are in
 
 ## Overview
 
-Igloo builds as a Flatpak from `io.github.frostyard.Igloo.json` on the GNOME
+Igloo builds as a Flatpak from `org.frostyard.Igloo.json` on the GNOME
 51 runtime. The manifest builds fast_float, simdutf and VTE 0.84.1, then this
 checkout with meson (`-Dgeneric=igloo -Dlibc-compat=true`). A `v*` tag
 publishes the Flatpak as an attested OCI image that the Frostyard remote
@@ -49,7 +49,11 @@ flatpak install --user flathub org.gnome.Sdk//51 org.flatpak.Builder
 - `.github/workflows/flatpak.yml` builds the manifest with its tests on every
   push and pull request, as the release builds it, and keeps the bundle
   `igloo-flatpak` as an artifact. To try a pull request, unzip that artifact
-  and run `flatpak install --user igloo.flatpak`.
+  and run `flatpak install --user igloo.flatpak`. On a computer that still
+  has `io.github.frostyard.Igloo`, the bundle's first run creates
+  `~/.var/app/org.frostyard.Igloo`, and the later rebase then leaves the old
+  settings in `~/.var/app/io.github.frostyard.Igloo`: back up both folders
+  first, and test on a computer without the old ID where you can.
 
 ### Release
 
@@ -60,6 +64,22 @@ The Frostyard remote lists only digests that this workflow attested on a `v*`
 tag, so a push to `main` does not reach users until the next tag. With the
 secret `FLATPAK_INDEX_DISPATCH_TOKEN`, the workflow also asks
 frostyard/flatpak-index to refresh at once instead of at its next hourly run.
+
+The same tag run also publishes the previous application ID,
+`io.github.frostyard.Igloo`, as the image tag `io.github.frostyard.Igloo`:
+`flatpak build-commit-from --end-of-life-rebase` copies the new build to the
+old ref and marks it end-of-life with a rebase to `org.frostyard.Igloo`, and
+`flatpak build-bundle --oci` carries that mark as the image label
+`org.flatpak.commit-metadata.ostree.endoflife-rebase`. It is pushed and
+attested after `latest` moves to the new ID. An index run that reads
+`latest` before the release job and the end-of-life tag after it can still
+list the rebase without its target, so frostyard/flatpak-index must refuse
+an image whose end-of-life rebase target is not in the same index. The index
+must also list that tag for the mark to reach users. `flatpak update` (and GNOME Software) then
+replaces an installed `io.github.frostyard.Igloo` with
+`org.frostyard.Igloo` and moves `~/.var/app/io.github.frostyard.Igloo` to
+the new ID on its first run; Igloo itself then moves the settings and files
+that still carry the old ID ([ADR-0003](../adr/0003-rename-the-application-id.md)).
 
 To check a published image:
 
@@ -74,27 +94,27 @@ Build and install for your user (on hosts where home is under `/var/home`,
 flatpak-builder needs `--filesystem=home` to see the checkout):
 
 ```bash
-flatpak run --filesystem=home org.flatpak.Builder --user --install --force-clean build-dir io.github.frostyard.Igloo.json
-flatpak run io.github.frostyard.Igloo
+flatpak run --filesystem=home org.flatpak.Builder --user --install --force-clean build-dir org.frostyard.Igloo.json
+flatpak run org.frostyard.Igloo
 ```
 
 A single-file bundle for another computer:
 
 ```bash
-flatpak run --filesystem=home org.flatpak.Builder --repo=repo --force-clean build-dir io.github.frostyard.Igloo.json
-flatpak build-bundle repo igloo.flatpak io.github.frostyard.Igloo
+flatpak run --filesystem=home org.flatpak.Builder --repo=repo --force-clean build-dir org.frostyard.Igloo.json
+flatpak build-bundle repo igloo.flatpak org.frostyard.Igloo
 ```
 
 Develop inside the build environment (what `make test` does):
 
 ```bash
-flatpak run --filesystem=home org.flatpak.Builder --user --force-clean --stop-at=ptyxis build-dir io.github.frostyard.Igloo.json
+flatpak run --filesystem=home org.flatpak.Builder --user --force-clean --stop-at=ptyxis build-dir org.frostyard.Igloo.json
 flatpak build --filesystem=home build-dir sh -c 'meson setup _build --prefix=/app && ninja -C _build && meson test -C _build'
 ```
 
 The meson option `generic` names the application. It defaults to `igloo`,
 which also sets the application and GSettings IDs to
-`io.github.frostyard.Igloo`; `ptyxis`, `terminal` and `builder` build
+`org.frostyard.Igloo`; `ptyxis`, `terminal` and `builder` build
 upstream's names.
 
 ## Operational notes
@@ -108,5 +128,6 @@ upstream's names.
 ## References
 
 - Rationale: [ADR-0002](../adr/0002-adopt-the-repository-baseline.md),
-  [ADR-0001](../adr/0001-follow-ptyxis-upstream.md)
+  [ADR-0001](../adr/0001-follow-ptyxis-upstream.md),
+  [ADR-0003](../adr/0003-rename-the-application-id.md)
 - Related: [nsl integration](nsl-integration.md)

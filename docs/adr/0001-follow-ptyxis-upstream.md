@@ -44,3 +44,5 @@ every upstream change into a conflict.
 - Shapes: [design: nsl integration](../design/nsl-integration.md),
   [design: build and release](../design/build-and-release.md)
 - Commit: `24213bb` (Rename the fork to Igloo)
+- Amended by: [ADR-0003](0003-rename-the-application-id.md) (the
+  application ID is now `org.frostyard.Igloo`)

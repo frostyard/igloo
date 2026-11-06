@@ -19,8 +19,8 @@ app_is_builder = get_option('generic') == 'builder'
 app_id = get_option('app-id')
 
 if app_is_igloo
-  default_app_id = 'io.github.frostyard.Igloo'
-  default_schema_path = '/io/github/frostyard/Igloo/'
+  default_app_id = 'org.frostyard.Igloo'
+  default_schema_path = '/org/frostyard/Igloo/'
 else
   default_app_id = 'org.gnome.Ptyxis'
   default_schema_path = '/org/gnome/Ptyxis/'
@@ -48,6 +48,36 @@ if app_schema_id == ''
   else
     app_schema_id = default_app_id
   endif
+endif
+
+# Igloo was named io.github.frostyard.Igloo before it followed core ADR-0016
+# (application IDs are org.frostyard.<AppName>). It migrates the user settings
+# and files of that name once, in src/ptyxis-igloo-migration.c. A build that
+# takes its names from an explicit option keeps no previous name: whoever
+# chose the option chose the names.
+igloo_previous_app_id = ''
+igloo_previous_schema_path = ''
+
+if app_is_igloo and \
+   get_option('app-id') == '' and \
+   get_option('gschema-id') == '' and \
+   get_option('gschema-path') == ''
+  igloo_previous_app_id = 'io.github.frostyard.Igloo'
+  igloo_previous_schema_path = '/io/github/frostyard/Igloo/'
+
+  if get_option('development')
+    igloo_previous_app_id = '@0@.Devel'.format(igloo_previous_app_id)
+    igloo_previous_schema_path = '@0@Devel/'.format(igloo_previous_schema_path)
+  endif
+endif
+
+# The desktop and metainfo files announce the rename to Flatpak and AppStream.
+if igloo_previous_app_id != ''
+  app_renamed_from = 'X-Flatpak-RenamedFrom=@0@.desktop;'.format(igloo_previous_app_id)
+  app_replaces = '  <replaces><id>@0@</id></replaces>'.format(igloo_previous_app_id)
+else
+  app_renamed_from = ''
+  app_replaces = ''
 endif
 
 app_schema_profile_id = '@0@.Profile'.format(app_schema_id)
@@ -100,6 +130,10 @@ if app_is_igloo
 else
   config_h.set_quoted('PACKAGE_WEBSITE', 'https://gitlab.gnome.org/chergert/ptyxis')
   config_h.set_quoted('PACKAGE_NAME', 'Ptyxis')
+endif
+if igloo_previous_app_id != ''
+  config_h.set_quoted('IGLOO_PREVIOUS_APP_ID', igloo_previous_app_id)
+  config_h.set_quoted('IGLOO_PREVIOUS_SCHEMA_PATH', igloo_previous_schema_path)
 endif
 config_h.set_quoted('PACKAGE_ICON_NAME', app_id)
 config_h.set10('DEVELOPMENT_BUILD', get_option('development'))

@@ -19,6 +19,7 @@ inherits.
 
 - [0001 — Follow Ptyxis upstream and rename only what users see](adr/0001-follow-ptyxis-upstream.md)
 - [0002 — Adopt the frostyard repository baseline](adr/0002-adopt-the-repository-baseline.md)
+- [0003 — Rename the application ID to org.frostyard.Igloo](adr/0003-rename-the-application-id.md)
 
 ### Org-wide decisions
 

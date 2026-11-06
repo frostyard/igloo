@@ -12,6 +12,7 @@ ptyxis_sources = [
   'ptyxis-find-bar.c',
   'ptyxis-fullscreen-box.c',
   'ptyxis-gated-list-model.c',
+  'ptyxis-igloo-migration.c',
   'ptyxis-inspector.c',
   'ptyxis-machine-command-dialog.c',
   'ptyxis-machine-create-dialog.c',

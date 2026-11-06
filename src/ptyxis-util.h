@@ -60,6 +60,7 @@ GVariant           *ptyxis_variant_new_toast     (const char *title,
 gboolean            ptyxis_is_default            (void);
 gboolean            ptyxis_make_default          (void);
 char               *ptyxis_escape_underline      (const char *str);
+char              **ptyxis_get_xdg_terminals_list_paths (void);
 
 static inline void
 ptyxis_take_str (char **out_str,

@@ -1,5 +1,5 @@
 {
-    "app-id" : "io.github.frostyard.Igloo",
+    "app-id" : "org.frostyard.Igloo",
     "runtime" : "org.gnome.Platform",
     "runtime-version" : "51",
     "sdk" : "org.gnome.Sdk",
