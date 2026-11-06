@@ -3,7 +3,7 @@
 Igloo is a GNOME terminal, based on Ptyxis, that opens
 [nsl](https://github.com/frostyard/nsl) machines the way Ptyxis opens Podman,
 Toolbox and Distrobox containers. It ships as the Flatpak
-`io.github.frostyard.Igloo`. Start at [docs/README.md](docs/README.md).
+`org.frostyard.Igloo`. Start at [docs/README.md](docs/README.md).
 
 This file (`AGENTS.md`) is the CANONICAL agent instructions: `CLAUDE.md`,
 `GEMINI.md`, `.cursorrules` and `.github/copilot-instructions.md` are
@@ -27,7 +27,14 @@ them rather than improvising, whichever agent you are. Start a new one from
   (`org.gnome.Ptyxis.*`) keep Ptyxis's names so that upstream changes merge
   cleanly. Rename only what users see. The meson option `generic` names the
   application; its default `igloo` sets the application and GSettings IDs to
-  `io.github.frostyard.Igloo` (`meson.build`).
+  `org.frostyard.Igloo` (`meson.build`).
+- **The previous ID stays handled.** Before the rename, the ID was
+  `io.github.frostyard.Igloo` ([ADR-0003](docs/adr/0003-rename-the-application-id.md)).
+  Keep `src/ptyxis-igloo-migration.c` (called first in `main()`), the
+  `X-Flatpak-RenamedFrom` and `<replaces>` entries in `data/`, and the
+  end-of-life image step in `.github/workflows/flatpak.yml`. A change that
+  reads or writes settings or files under `APP_ID` must keep the migration
+  before it.
 - **Upstream files stay.** `README.ptyxis.md`, `NEWS`, `ptyxis.doap`,
   `org.gnome.Ptyxis.Devel.json`, `.gitlab-ci.yml`, `.gitlab/`, `.foundry/`,
   `subprojects/`, `man/` and `po/` come from Ptyxis. Do not delete or rewrite

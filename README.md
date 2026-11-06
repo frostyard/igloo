@@ -11,7 +11,7 @@ Igloo is a GNOME terminal for people who work in
 [nsl](https://frostyard.github.io/nsl/) machines: it opens them the way it
 opens Podman, Toolbox and Distrobox containers. It is based on
 [Ptyxis](https://gitlab.gnome.org/GNOME/ptyxis), keeps everything Ptyxis does,
-and installs as `io.github.frostyard.Igloo`, beside Ptyxis, with its own
+and installs as `org.frostyard.Igloo`, beside Ptyxis, with its own
 settings.
 
 **Status:** pre-release. It follows Ptyxis 50; the nsl features need nsl 0.8.0 or later.
@@ -55,8 +55,12 @@ too:
 ```sh
 flatpak remote-add --user --if-not-exists frostyard https://frostyard.github.io/flatpak-index/frostyard.flatpakrepo
 flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak install --user frostyard io.github.frostyard.Igloo
+flatpak install --user frostyard org.frostyard.Igloo
 ```
+
+Igloo was `io.github.frostyard.Igloo` before; `flatpak update` (or GNOME
+Software) replaces it with `org.frostyard.Igloo` and keeps its settings,
+profiles, saved session and palettes.
 
 Every pull request's [Flatpak run](https://github.com/frostyard/igloo/actions/workflows/flatpak.yml)
 keeps a bundle, `igloo-flatpak`, to try a change before it merges. To build
@@ -65,11 +69,11 @@ it yourself, see [build and release](docs/design/build-and-release.md).
 ## Remove
 
 ```sh
-flatpak uninstall --user io.github.frostyard.Igloo
+flatpak uninstall --user org.frostyard.Igloo
 ```
 
 This keeps Igloo's settings and saved sessions; add `--delete-data` to remove
-`~/.var/app/io.github.frostyard.Igloo` too. Removing Igloo does not remove
+`~/.var/app/org.frostyard.Igloo` too. Removing Igloo does not remove
 nsl or any machine (use `nsl remove` for machines). If no other app needs the
 Frostyard remote, remove it with `flatpak remote-delete --user frostyard`.
 

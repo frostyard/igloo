@@ -352,8 +352,8 @@ line_is_ptyxis (const char *line)
   return strcmp (line, XDG_TERMINAL_EXEC_ENTRY) == 0 && line[strlen(XDG_TERMINAL_EXEC_ENTRY)] == 0;
 }
 
-static char **
-get_xdg_terminals_list_paths (void)
+char **
+ptyxis_get_xdg_terminals_list_paths (void)
 {
   g_autofree char *fallback = g_build_filename (g_get_user_config_dir (), "xdg-terminals.list", NULL);
   const char *session = g_getenv ("XDG_CURRENT_DESKTOP");
@@ -394,7 +394,7 @@ get_xdg_terminals_list_paths (void)
 gboolean
 ptyxis_is_default (void)
 {
-  g_auto(GStrv) paths = get_xdg_terminals_list_paths ();
+  g_auto(GStrv) paths = ptyxis_get_xdg_terminals_list_paths ();
 
   for (guint i = 0; paths[i]; i++)
     {
@@ -464,7 +464,7 @@ ptyxis_make_default_in_file (const char *path)
 gboolean
 ptyxis_make_default (void)
 {
-  g_auto(GStrv) paths = get_xdg_terminals_list_paths ();
+  g_auto(GStrv) paths = ptyxis_get_xdg_terminals_list_paths ();
 
   for (guint i = 0; paths[i]; i++)
     ptyxis_make_default_in_file (paths[i]);

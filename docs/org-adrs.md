@@ -6,6 +6,7 @@ recorded as ADRs in
 The ones that bind Igloo:
 
 - [ADR-0018 — Org-wide agent instruction and knowledge surfaces](https://github.com/frostyard/core/blob/main/docs/adr/0018-org-wide-agent-instruction-and-knowledge-surfaces.md) — `AGENTS.md` is canonical; `CLAUDE.md`, `GEMINI.md`, `.cursorrules` and `.github/copilot-instructions.md` are symlinks to it, and `.memory/corrections.jsonl` is the append-only corrections inbox ([`.memory/README.md`](../.memory/README.md))
+- [ADR-0016 — Reverse-DNS org.frostyard.* identifiers](https://github.com/frostyard/core/blob/main/docs/adr/0016-reverse-dns-org-frostyard-identifiers.md) — the application, GSettings and D-Bus ID is `org.frostyard.Igloo`, and the AppStream developer ID is `org.frostyard`; the previous ID `io.github.frostyard.Igloo` is end-of-life with a rebase ([ADR-0003](adr/0003-rename-the-application-id.md))
 - [ADR-0019 — Governance as code and risk tiers](https://github.com/frostyard/core/blob/main/docs/adr/0019-governance-as-code-and-risk-tiers.md) — [`.github/pull_request_template.md`](../.github/pull_request_template.md) has a `Risk tier` section
 - [ADR-0021 — SHA-pinned actions and least-privilege CI workflows](https://github.com/frostyard/core/blob/main/docs/adr/0021-sha-pinned-actions-and-least-privilege-ci.md) — every action in [`.github/workflows/`](../.github/workflows/) is pinned to a commit SHA with a version comment, every workflow has read-only or empty top-level permissions, and every checkout sets `persist-credentials: false`
 - [ADR-0022 — make ci gate](https://github.com/frostyard/core/blob/main/docs/adr/0022-make-ci-gate-and-test-naming-filter.md) and [ADR-0038 — make ci stays canonical](https://github.com/frostyard/core/blob/main/docs/adr/0038-scope-the-test-name-filter-to-chairlift.md) — `make ci` is the credential-free gate and runs every test; the test-name filter is chairlift's only
@@ -20,13 +21,6 @@ The ones that bind Igloo:
 - [ADR-0071 — Hold every code repository to one baseline](https://github.com/frostyard/core/blob/main/docs/adr/0071-hold-every-code-repository-to-one-baseline.md) — rows B1 to B17; see [ADR-0002](adr/0002-adopt-the-repository-baseline.md). [`LICENSE`](../LICENSE) is GPL-3.0-or-later, a copy of upstream's `COPYING`
 - [ADR-0072 — Write every README to one standard](https://github.com/frostyard/core/blob/main/docs/adr/0072-write-every-readme-to-one-standard.md) — `README.md` is an `app` README
 - [ADR-0073 — Let CI run the make ci targets as separate jobs](https://github.com/frostyard/core/blob/main/docs/adr/0073-let-ci-run-the-make-ci-targets-as-separate-jobs.md) — [`ci.yml`](../.github/workflows/ci.yml) runs `make verify` and `make corrections-base` in the job `verify`, and `make test` in the job `test`
-
-Known departure:
-[ADR-0016 — Reverse-DNS org.frostyard.* identifiers](https://github.com/frostyard/core/blob/main/docs/adr/0016-reverse-dns-org-frostyard-identifiers.md)
-names application IDs `org.frostyard.<AppName>`. Igloo's application ID is
-`io.github.frostyard.Igloo`, from before this list; it is the Flatpak ID,
-the GSettings ID and the settings path of installed copies, so a change is a
-breaking change with a migration of its own.
 
 Not applicable: the Go and svu ADRs
 ([ADR-0012](https://github.com/frostyard/core/blob/main/docs/adr/0012-svu-versioning-and-rolling-dev-prerelease.md),

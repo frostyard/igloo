@@ -14,7 +14,7 @@
       "why": "publication: builds, pushes and attests the Flatpak OCI image that the Frostyard remote serves on v* tags"
     },
     {
-      "glob": "io.github.frostyard.Igloo.json",
+      "glob": "org.frostyard.Igloo.json",
       "why": "publication: the Flatpak manifest that releases build, with the pinned sources and checksums of its dependencies"
     },
     {
@@ -52,6 +52,10 @@
     {
       "glob": "src/ptyxis-machine-command-dialog.c",
       "why": "destructive operations: runs the Machines page's nsl commands on the host and interrupts them"
+    },
+    {
+      "glob": "src/ptyxis-igloo-migration.c",
+      "why": "destructive operations: migrates the user's settings and files from the previous application ID"
     }
   ]
 }

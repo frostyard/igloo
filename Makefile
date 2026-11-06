@@ -11,7 +11,7 @@
 #   make ci      what CI runs: verify, the corrections comparison with BASE,
 #                and test.
 
-MANIFEST := io.github.frostyard.Igloo.json
+MANIFEST := org.frostyard.Igloo.json
 # flatpak-builder's build directory and meson's; .gitignore lists both.
 BUILD_DIR := build-dir
 MESON_BUILD_DIR := _build

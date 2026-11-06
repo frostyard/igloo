@@ -56,10 +56,11 @@ test("the risk-path list covers the release, the sandbox boundary and the destru
   const { paths } = JSON.parse(read(".github/risk-paths.json"));
   const required = [
     ...files(".github/workflows"),
-    "io.github.frostyard.Igloo.json",
+    "org.frostyard.Igloo.json",
     ...files("agent"),
     "src/ptyxis-machines-page.c",
     "src/ptyxis-machine-command-dialog.c",
+    "src/ptyxis-igloo-migration.c",
   ];
   const missing = required.filter((path) => !paths.some((entry) => matchGlob(entry.glob, path)));
   assert.deepEqual(missing, [], `no glob in .github/risk-paths.json matches: ${missing.join(", ")}`);
@@ -67,12 +68,28 @@ test("the risk-path list covers the release, the sandbox boundary and the destru
   // flatpak.yml publishes; it needs its own publication entry, not only the
   // governance entry for every workflow.
   const publication = paths.filter((entry) => entry.why.startsWith("publication:"));
-  for (const path of [".github/workflows/flatpak.yml", "io.github.frostyard.Igloo.json"]) {
+  for (const path of [".github/workflows/flatpak.yml", "org.frostyard.Igloo.json"]) {
     assert.ok(
       publication.some((entry) => matchGlob(entry.glob, path)),
       `${path} has no publication entry`,
     );
   }
+});
+
+test("flatpak.yml publishes the previous ID end-of-life, rebased to the new ID, before latest moves", () => {
+  // docs/adr/0003-rename-the-application-id.md: without this image, installed
+  // copies of io.github.frostyard.Igloo never move to org.frostyard.Igloo.
+  const workflow = read(".github/workflows/flatpak.yml");
+  assert.match(workflow, /^ {2}APP_ID: org\.frostyard\.Igloo$/m);
+  assert.match(workflow, /^ {2}PREVIOUS_APP_ID: io\.github\.frostyard\.Igloo$/m);
+  assert.match(workflow, /--end-of-life-rebase="\$PREVIOUS_APP_ID=\$APP_ID"/);
+  assert.match(workflow, /repo "app\/\$PREVIOUS_APP_ID\/x86_64\/master"/);
+  assert.match(workflow, /build-bundle --oci --arch=x86_64 repo oci\/igloo-eol\.oci "\$PREVIOUS_APP_ID"/);
+  const pushEol = workflow.indexOf('docker://$IMAGE:$PREVIOUS_APP_ID"');
+  const attestEol = workflow.indexOf("steps.push-eol.outputs.digest");
+  const latest = workflow.indexOf('docker://$IMAGE:latest"');
+  assert.ok(pushEol > 0 && attestEol > pushEol, "the end-of-life image is pushed, then attested");
+  assert.ok(latest > attestEol, "latest moves only after the end-of-life image is attested");
 });
 
 // The prerequisites and recipe commands of the Makefile's ci target.

@@ -17,6 +17,7 @@ desktop_config = configuration_data()
 desktop_config.set('APP_ID', app_id)
 desktop_config.set('APP_NAME', app_name)
 desktop_config.set('APP_COMMENT', app_comment)
+desktop_config.set('APP_RENAMED_FROM', app_renamed_from)
 desktop_file_in = configure_file(
           input: 'org.gnome.Ptyxis.desktop.in.in',
          output: 'org.gnome.Ptyxis.desktop.in',
@@ -39,6 +40,7 @@ endif
 appstream_config = configuration_data()
 appstream_config.set('APP_ID', app_id)
 appstream_config.set('APP_NAME', app_name)
+appstream_config.set('APP_REPLACES', app_replaces)
 appstream_file_in = configure_file(
           input: 'org.gnome.Ptyxis.metainfo.xml.in.in',
          output: 'org.gnome.Ptyxis.metainfo.xml.in',

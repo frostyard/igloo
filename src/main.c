@@ -26,6 +26,7 @@
 #include <glib/gi18n.h>
 
 #include "ptyxis-application.h"
+#include "ptyxis-igloo-migration.h"
 #include "ptyxis-palette.h"
 #include "ptyxis-util.h"
 
@@ -216,6 +217,11 @@ main (int   argc,
 
   g_set_prgname ("ptyxis");
   g_set_application_name (ptyxis_app_name ());
+
+  /* The rename of the application ID runs before anything reads settings or
+   * the user palettes, which --palette writes there.
+   */
+  ptyxis_igloo_migrate ();
 
   check_early_opts (&argc, &argv, &standalone);
 
