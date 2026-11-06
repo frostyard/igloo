@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "paths": [
+    {
+      "glob": ".github/risk-paths.json",
+      "why": "governance: the high-risk path list"
+    },
+    {
+      "glob": ".github/workflows/**",
+      "why": "governance: CI, the risk-paths caller and token permissions"
+    },
+    {
+      "glob": ".github/workflows/flatpak.yml",
+      "why": "publication: builds, pushes and attests the Flatpak OCI image that the Frostyard remote serves on v* tags"
+    },
+    {
+      "glob": "io.github.frostyard.Igloo.json",
+      "why": "publication: the Flatpak manifest that releases build, with the pinned sources and checksums of its dependencies"
+    },
+    {
+      "glob": "Makefile",
+      "why": "governance: the verify gate"
+    },
+    {
+      "glob": "scripts/check-template.mjs",
+      "why": "governance: the template verification gate"
+    },
+    {
+      "glob": "scripts/check-corrections.mjs",
+      "why": "governance: the corrections validation gate"
+    },
+    {
+      "glob": "scripts/lib/**",
+      "why": "governance: the vendored risk-path validator and matcher"
+    },
+    {
+      "glob": "mise.toml",
+      "why": "update verification: the tool pins that CI installs, checked against mise.lock"
+    },
+    {
+      "glob": "mise.lock",
+      "why": "update verification: the checksums of the tools that CI installs"
+    },
+    {
+      "glob": "agent/**",
+      "why": "auth: ptyxis-agent runs on the host outside the Flatpak sandbox and spawns host processes for the app"
+    },
+    {
+      "glob": "src/ptyxis-machines-page.c",
+      "why": "destructive operations: machine removal, stop, export and nsl update and shutdown from the Machines page"
+    },
+    {
+      "glob": "src/ptyxis-machine-command-dialog.c",
+      "why": "destructive operations: runs the Machines page's nsl commands on the host and interrupts them"
+    }
+  ]
+}

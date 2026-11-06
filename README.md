@@ -1,240 +1,114 @@
+<!-- readme-kind: app -->
 <img src="data/icons/igloo.svg" alt="Igloo icon" width="112" align="right">
 
 # Igloo
 
+[![Flatpak](https://github.com/frostyard/igloo/actions/workflows/flatpak.yml/badge.svg)](https://github.com/frostyard/igloo/actions/workflows/flatpak.yml)
+
 **A terminal for nsl machines and containers.**
 
-Igloo is a GNOME terminal that opens [nsl](https://frostyard.github.io/nsl/)
-machines the way it opens Podman, Toolbox and Distrobox containers. nsl runs
-WSL-style Linux machines on atomic Linux hosts: systemd-nspawn containers
-inside a systemd-vmspawn VM. Pick a machine from the New Tab menu, or create,
-configure and remove machines in Preferences.
+Igloo is a GNOME terminal for people who work in
+[nsl](https://frostyard.github.io/nsl/) machines: it opens them the way it
+opens Podman, Toolbox and Distrobox containers. It is based on
+[Ptyxis](https://gitlab.gnome.org/GNOME/ptyxis), keeps everything Ptyxis does,
+and installs as `io.github.frostyard.Igloo`, beside Ptyxis, with its own
+settings.
 
-Igloo is based on [Ptyxis](https://gitlab.gnome.org/chergert/ptyxis) by
-Christian Hergert, and keeps everything Ptyxis does. It installs as
-`io.github.frostyard.Igloo`, beside Ptyxis, with its own settings.
+**Status:** pre-release. It follows Ptyxis 50; the nsl features need nsl 0.8.0 or later.
+
+**Documentation:** [docs/README.md](docs/README.md)
+
+## What it does
+
+- **Opens machines from the New Tab menu.** The dropdown next to the new tab
+  button lists nsl machines in a *Machines* section; a pick opens a tab in
+  that machine. [Design](docs/design/nsl-integration.md#window-side)
+- **Keeps machines in profiles and sessions.** A profile's *Default
+  Container* can be an nsl machine, and pinned or restored tabs reopen in
+  their machine.
+- **Manages machines.** *Main menu → Machines* creates, imports, starts,
+  stops, exports and removes machines, and edits a profile for each.
+  Long nsl commands run in a terminal, so downloads and verification are
+  visible.
+- **Sets nsl's resources.** Shared VM memory and processors, autostart and
+  the idle timeout, written to `nsl.conf`; and `nsl doctor`, `nsl update`
+  and `nsl shutdown`.
+- **Follows your directory.** A new tab starts where the last one was, in
+  host or machine terms, as nsl maps them.
+  [Working directories](docs/design/nsl-integration.md#working-directories)
+
+## Requirements
+
+nsl 0.8.0 or later must be installed on the host; the Flatpak does not
+bundle it. With an older nsl, machines still open from the New Tab menu, but
+the Machines page asks you to update. If nsl is missing, the page links to
+its installation guide.
 
 ## Install
 
-Igloo is published to the [Frostyard Flatpak remote](https://github.com/frostyard/flatpak-index).
-Add the remote once, for your user, then install Igloo and update it with `flatpak update`:
+Igloo is on the [Frostyard Flatpak remote](https://github.com/frostyard/flatpak-index).
+Add it and Flathub (for the GNOME 51 runtime) once, for your user, then
+install Igloo and update it with `flatpak update`:
 
-```bash
+```sh
 flatpak remote-add --user --if-not-exists frostyard https://frostyard.github.io/flatpak-index/frostyard.flatpakrepo
-```
-
-Igloo uses the GNOME 51 runtime from [Flathub](https://flathub.org/). A `--user` install
-gets a missing runtime only from a user remote, so add Flathub for your user
-too, before you install Igloo:
-
-```bash
 flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-```
-
-Then install Igloo:
-
-```bash
 flatpak install --user frostyard io.github.frostyard.Igloo
 ```
 
-Every pull request's [CI run](https://github.com/frostyard/igloo/actions/workflows/flatpak.yml)
-also keeps a bundle, `igloo-flatpak`, to try a change before it merges:
-unzip it and run `flatpak install --user igloo.flatpak`.
+Every pull request's [Flatpak run](https://github.com/frostyard/igloo/actions/workflows/flatpak.yml)
+keeps a bundle, `igloo-flatpak`, to try a change before it merges. To build
+it yourself, see [build and release](docs/design/build-and-release.md).
 
 ## Remove
-
-Remove Igloo with:
 
 ```sh
 flatpak uninstall --user io.github.frostyard.Igloo
 ```
 
-This keeps Igloo's settings and saved sessions. To remove them too, which
-deletes `~/.var/app/io.github.frostyard.Igloo`:
-
-```sh
-flatpak uninstall --user --delete-data io.github.frostyard.Igloo
-```
-
-Removing Igloo does not remove nsl or any machine. Use `nsl remove` for
-machines. If no other app needs the Frostyard remote, remove it as well:
-
-```sh
-flatpak remote-delete --user frostyard
-```
-
-## What it adds to Ptyxis
-
-- **New Tab menu.** The dropdown next to the new tab button lists nsl machines
-  in a *Machines* section. Picking one opens a tab in that machine. The menu
-  ends with *Manage Machines…*.
-- **Profiles and sessions.** A profile's *Default Container* can be an nsl
-  machine, and pinned or restored tabs reopen in their machine. New tabs keep
-  the current machine as they keep the current container.
-- **Main menu → Machines** opens the *Machines* page in Preferences:
-  - every machine with its distribution, tier, state and default marker;
-  - *New Machine* asks for a name, a distribution from the signed nsl
-    catalogue, isolation, default and an optional username, then runs
-    `nsl create` in a terminal so downloads and verification are visible, and
-    offers to open the new machine;
-  - *Import Machine…* asks for an archive, then a name and isolation, then
-    runs `nsl import` in a terminal and offers to open the machine;
-  - per machine: *Open Terminal*, *Start*/*Stop*, *Make Default*,
-    *Edit Profile…* (creates or opens a profile whose default container is the
-    machine, for its own palette, font and command), *Export…* (asks for a
-    file, NAME-DATE.tar by default, then runs `nsl export NAME FILE` in a
-    terminal; a running machine is stopped first, after a confirmation; nsl
-    never replaces a file) and *Remove…* (`nsl stop` then
-    `nsl remove --yes`, after a confirmation);
-  - *Resources*: shared VM memory and processors, autostart, idle timeout and
-    isolated VM resources, written to `nsl.conf`;
-  - *Host*: `nsl doctor`, `nsl update` and `nsl shutdown`.
-
-If nsl is not installed, the page links to its installation guide. In the
-Flatpak, a file outside the folders Igloo can see comes from the document
-portal, and Igloo gives nsl its real path on the computer.
-
-## Requirements
-
-nsl 0.8.0 or later must be installed on the host; the Flatpak does not bundle
-it. Igloo reads nsl's state through `--json`, which 0.8.0 introduced; with an
-older nsl, machines still open from the New Tab menu, but the Machines page
-asks you to update. The agent looks for nsl on `PATH`, then in
-`~/.local/bin`, `/home/linuxbrew/.linuxbrew/bin`, `~/.linuxbrew/bin`,
-`/usr/local/bin` and `/usr/bin`, because a session started through
-`flatpak-spawn` often has a minimal `PATH`. The page's *Check Again* button
-looks again after you install it.
-
-## Build and install the Flatpak
-
-You need the GNOME 51 SDK and flatpak-builder:
-
-```bash
-flatpak install --user flathub org.gnome.Sdk//51 org.flatpak.Builder
-```
-
-Build and install for your user (on hosts where home is under `/var/home`,
-flatpak-builder needs `--filesystem=home` to see the checkout):
-
-```bash
-flatpak run --filesystem=home org.flatpak.Builder --user --install --force-clean build-dir io.github.frostyard.Igloo.json
-```
-
-```bash
-flatpak run io.github.frostyard.Igloo
-```
-
-To produce a single-file bundle for another computer:
-
-```bash
-flatpak run --filesystem=home org.flatpak.Builder --repo=repo --force-clean build-dir io.github.frostyard.Igloo.json
-```
-
-```bash
-flatpak build-bundle repo igloo.flatpak io.github.frostyard.Igloo
-```
-
-The manifest builds VTE 0.84.1 with fast_float and simdutf on top of the GNOME
-51 runtime, then builds this checkout.
-
-[CI](.github/workflows/flatpak.yml) builds the same manifest with its tests on
-every push and pull request. On a `v*` tag it also exports an OCI image with
-`flatpak build-bundle --oci`, pushes it to `ghcr.io/frostyard/igloo`, attests
-its digest, and then moves `latest`, which the Frostyard remote serves. The
-remote lists only digests that this workflow attested on a `v*` tag, so a push
-to `main` does not reach users until the next tag. To check a published image:
-
-```bash
-gh attestation verify oci://ghcr.io/frostyard/igloo:latest --repo frostyard/igloo \
-  --signer-workflow github.com/frostyard/igloo/.github/workflows/flatpak.yml
-```
-
-### Develop inside the build environment
-
-Build the dependencies once, then use meson inside the SDK:
-
-```bash
-flatpak run --filesystem=home org.flatpak.Builder --user --force-clean --stop-at=ptyxis build-dir io.github.frostyard.Igloo.json
-```
-
-```bash
-flatpak build --filesystem=home build-dir sh -c 'meson setup _build --prefix=/app && ninja -C _build && meson test -C _build'
-```
-
-The meson option `generic` names the application. It defaults to `igloo`,
-which also sets the application and GSettings IDs to
-`io.github.frostyard.Igloo`; `ptyxis`, `terminal` and `builder` build upstream's
-names.
+This keeps Igloo's settings and saved sessions; add `--delete-data` to remove
+`~/.var/app/io.github.frostyard.Igloo` too. Removing Igloo does not remove
+nsl or any machine (use `nsl remove` for machines). If no other app needs the
+Frostyard remote, remove it with `flatpak remote-delete --user frostyard`.
 
 ## How it works
 
 Like Ptyxis, Igloo runs `ptyxis-agent` on the host, outside the Flatpak
-sandbox, and talks to it over a private D-Bus connection. Igloo adds to the
-agent:
-
-- `PtyxisNslProvider` (`agent/ptyxis-nsl-provider.c`) exports a container,
-  `nsl:NAME`, for every machine `nsl list --json` reports, except incomplete
-  machines and machines being removed. It reads machine names from
-  `NSL_HOME/machines` at startup, so restored sessions find their machines
-  before `nsl list` finishes. It reloads when nsl changes its records, its
-  default machine or a VM's runtime directory, and shortly after a terminal
-  starts a machine. It never polls: an `nsl list` against a running VM counts
-  as activity and would keep the VM from idling.
-- `PtyxisNslContainer` (`agent/ptyxis-nsl-container.c`) spawns terminals with
-  `nsl run -m NAME --cd / -- env VARS… /bin/sh -c SCRIPT DIR ARGV…`. nsl only
-  forwards terminal and locale variables, so `env` carries the rest
-  (`VTE_VERSION`, `PTYXIS_PROFILE`, proxies). The script changes to the
-  requested directory, or to the guest home, and starts the account's login
-  shell when the requested program is missing in the machine.
-- `org.gnome.Ptyxis.Machines` (`agent/ptyxis-machines-impl.c`, interface in
-  `agent/org.gnome.Ptyxis.Agent.xml`) lists machines and images, reads and
-  writes `nsl.conf`, and runs short nsl commands for the Preferences page.
-  Writes keep the file's comments and are checked with `nsl config`; a file
-  nsl rejects is restored.
-
-The directory a new tab starts in follows nsl's rules:
-
-| Requested directory | Shared machine | Isolated machine |
-| --- | --- | --- |
-| none (a fresh window) | guest home | guest home |
-| `/mnt/host/…` (from another machine tab) | kept | guest home |
-| a host directory in your home, `/run/media/USER` or `/mnt` | `/mnt/host/…`, matched by device and inode like nsl | tried as a machine path |
-| anything else | tried as a machine path, else the guest home | same |
-
-A new tab receives the previous tab's directory in host terms, so a host tab
-opened from a machine tab at `/mnt/host/var/home/you/src` starts in
-`/var/home/you/src`. Links clicked in a machine tab that point below
-`/mnt/host` open the host file they name.
-
-The nsl machine images report the shell's directory with OSC 7 through
-`/etc/profile.d/nsl-osc7.sh`, so a new tab opened from a machine tab starts in
-its current directory.
-
-`agent/ptyxis-nsl.c` reads the documents `nsl list --json`, `nsl images --json`
-and `nsl config --json` print, as nsl's
-[CLI contract](https://github.com/frostyard/nsl/blob/main/docs/specs/cli.md#machine-readable-output)
-defines them ([nsl ADR-0021](https://github.com/frostyard/nsl/blob/main/docs/adr/0021-machine-readable-output.md)).
-It ignores fields it does not know, and `testsuite/test-nsl.c` covers real
-output. The *Resources* rows take their ranges from `config --json`.
-
-## Known limitations
-
-- Machine states on the Machines page refresh when the page is shown, after an
-  action and after starting a terminal, not continuously.
-
-## Relationship to Ptyxis
-
-Igloo follows [Ptyxis upstream](https://gitlab.gnome.org/GNOME/ptyxis).
-Source files, code symbols and the internal D-Bus names keep Ptyxis's names
-so that upstream changes merge cleanly; only what users see is renamed.
+sandbox. Igloo adds nsl to the agent: it lists machines with
+`nsl list --json`, opens terminals with `nsl run`, and runs the Machines
+page's nsl commands. It never polls nsl, so idle VMs can stop. Source files
+and symbols keep Ptyxis's names so that upstream changes merge cleanly.
+[nsl integration](docs/design/nsl-integration.md) has the details, and
+[README.ptyxis.md](README.ptyxis.md) describes everything Igloo inherits.
 Report problems with Igloo's nsl features
 [here](https://github.com/frostyard/igloo/issues), not to Ptyxis.
-[README.ptyxis.md](README.ptyxis.md) is upstream's README, describing
-everything Igloo inherits.
 
-## License and credits
+## Limits
 
-Igloo is free software under the [GNU General Public License, version 3 or
-later](COPYING), like Ptyxis. Ptyxis is by Christian Hergert and its
-contributors; its icons are by Jakub Steiner. The Igloo icon and the nsl
-integration are by Frostyard.
+- Machine states on the Machines page refresh when the page is shown, after
+  an action and after starting a terminal, not continuously.
+
+## Credits
+
+Igloo is [Ptyxis](https://gitlab.gnome.org/GNOME/ptyxis) by Christian Hergert
+and its contributors; its icons are by Jakub Steiner. The Igloo icon and the
+nsl integration are by Frostyard.
+
+## Develop
+
+```sh
+mise install   # Node for make verify
+make verify    # agent surfaces, docs index, risk paths, corrections
+make test      # build in the GNOME 51 SDK and run the meson tests
+make ci        # what CI runs
+```
+
+[Build and release](docs/design/build-and-release.md) covers the GNOME SDK,
+flatpak-builder and the release.
+
+## Where to go next
+
+- [AGENTS.md](AGENTS.md): the rules for agents and contributors.
+- [docs/README.md](docs/README.md): the decisions, designs, specs and plans.
+- [SECURITY.md](SECURITY.md): report a vulnerability privately.
+- [LICENSE](LICENSE): GNU General Public License, version 3 or later, like Ptyxis.
