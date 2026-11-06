@@ -1,0 +1,73 @@
+# CI: the parts of `make ci` as 2 jobs (frostyard/core ADR-0073), so the
+# Node checks do not wait for the GNOME SDK build. `verify` runs `make verify`
+# and `make corrections-base`; `test` runs `make test`. A target added to
+# `ci:` in the Makefile needs a step here in the same pull request
+# (test/repository.test.mjs checks it).
+#
+# Actions are pinned to commit SHAs, the token has only contents read, and
+# checkouts do not persist credentials (core ADR-0021). flatpak.yml builds
+# and tests the release configuration and publishes on v* tags.
+name: CI
+
+on:
+  pull_request: {}
+  push:
+    branches:
+      - main
+  merge_group: {}
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The corrections comparison reads the PR base commit.
+          fetch-depth: 0
+      # Node comes from mise.toml and mise.lock (core ADR-0043),
+      # checksum-verified, the same way a developer's `mise install` does.
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          install: true
+          install_args: node
+          cache: true
+      - run: make verify
+      - run: make corrections-base BASE="$BASE"
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    # The GNOME 51 SDK and flatpak-builder, as in flatpak.yml. flatpak-builder
+    # sandboxes builds with bubblewrap, which needs a privileged container.
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51
+      options: --privileged
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The checkout belongs to the runner's user, not to the container's
+      # root. flatpak build drops root's capabilities in its sandbox, so
+      # meson could not create _build there.
+      - run: chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+      # The built dependencies (fast_float, simdutf, VTE); they change only
+      # with the manifest.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .flatpak-builder
+          key: make-test-${{ hashFiles('io.github.frostyard.Igloo.json') }}
+      - run: make test FLATPAK_BUILDER=flatpak-builder
