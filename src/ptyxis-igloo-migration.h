@@ -39,4 +39,12 @@ void     ptyxis_igloo_migration_run           (const char        *config_dir,
                                                const char        *new_path);
 void     ptyxis_igloo_migrate                 (void);
 
+/* for tests only: called with the migration lock held, before it reads
+ * anything; pass NULL to remove it again */
+void     ptyxis_igloo_migration_set_locked_hook (GFunc       hook,
+                                                 gpointer    data);
+/* for tests only: the locked descriptor, which the caller closes, or -1 when
+ * another process holds the migration lock */
+int      ptyxis_igloo_migration_try_lock        (const char *config_dir);
+
 G_END_DECLS

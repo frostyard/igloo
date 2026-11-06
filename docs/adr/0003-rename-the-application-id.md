@@ -36,7 +36,10 @@ that metadata from the image label
   `io.github.frostyard.Igloo` of `ghcr.io/frostyard/igloo`: a copy of the
   new build under the old ref, marked end-of-life with a rebase to
   `org.frostyard.Igloo` (`flatpak build-commit-from --end-of-life-rebase`).
-  It is pushed and attested before `latest` moves.
+  It is pushed and attested after `latest` moves to the new ID, so an
+  index built at any moment never offers a rebase to an ID that it does
+  not list; as with `latest`, the tag that the index reads moves only
+  after the digest is attested.
 - The desktop file names the old one in `X-Flatpak-RenamedFrom`, and the
   AppStream data names the old ID in `<replaces>`.
 - At startup, before it reads settings or files, Igloo moves what still
@@ -44,7 +47,10 @@ that metadata from the image label
   `$XDG_CONFIG_HOME` and `$XDG_DATA_HOME`, the settings groups under
   `io/github/frostyard/Igloo` in the keyfile, and the `xdg-terminals.list`
   line. Each step runs only when the old item exists and the new one does
-  not, so it runs once and never overwrites newer data.
+  not, so it runs once and never overwrites newer data. It holds an
+  exclusive lock (`flock` on `$XDG_CONFIG_HOME/.igloo-migration.lock`)
+  while it reads and writes, so 2 processes that start at once cannot
+  write a stale copy of the settings.
 
 ## Consequences
 
@@ -56,6 +62,10 @@ that metadata from the image label
   of the old ID get no more updates.
 - The end-of-life image and the migration stay until no installed copy of
   the old ID is left; removing them is a new decision.
+- A copy of the new ID that runs before the rebase (a pull request bundle)
+  creates `~/.var/app/org.frostyard.Igloo` first. Flatpak then does not
+  move the old folder, and the old settings stay in
+  `~/.var/app/io.github.frostyard.Igloo`.
 - A build outside Flatpak keeps settings in dconf; the migration does not
   move dconf paths. Igloo ships only as a Flatpak.
 

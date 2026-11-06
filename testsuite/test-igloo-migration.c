@@ -21,6 +21,7 @@
 #include "config.h"
 
 #include <string.h>
+#include <unistd.h>
 
 #include <glib.h>
 #include <glib/gstdio.h>
@@ -297,9 +298,123 @@ test_run (void)
   remove_tree (tmp);
 }
 
-static void
-test_run_nothing_old (void)
+typedef struct
 {
+  GMutex    mutex;
+  GCond     cond;
+  gboolean  inside;
+  gboolean  go;
+  char     *config_dir;
+  char     *data_dir;
+} LockTest;
+
+/* The hook runs inside ptyxis_igloo_migration_run() with the lock held. It
+ * tells the main thread that the run holds the lock and then waits, so the
+ * main thread can try the lock while the run reads and writes.
+ */
+static void
+locked_hook_cb (gpointer data,
+                gpointer user_data)
+{
+  LockTest *test = user_data;
+
+  g_mutex_lock (&test->mutex);
+  test->inside = TRUE;
+  g_cond_broadcast (&test->cond);
+
+  while (!test->go)
+    g_cond_wait (&test->cond, &test->mutex);
+
+  g_mutex_unlock (&test->mutex);
+}
+
+static gpointer
+migration_thread_cb (gpointer data)
+{
+  LockTest *test = data;
+
+  ptyxis_igloo_migration_run (test->config_dir,
+                              test->data_dir,
+                              NULL,
+                              OLD_ID,
+                              NEW_ID,
+                              OLD_PATH,
+                              NEW_PATH);
+
+  return NULL;
+}
+
+static void
+test_run_holds_lock (void)
+{
+  g_autoptr(GError) error = NULL;
+  g_autofree char *tmp = g_dir_make_tmp ("igloo-migration-XXXXXX", &error);
+  g_autofree char *config_dir = NULL;
+  g_autofree char *data_dir = NULL;
+  g_autofree char *keyfile_path = NULL;
+  g_autoptr(GKeyFile) key_file = NULL;
+  LockTest test = {0};
+  GThread *thread;
+  int fd;
+
+  g_assert_no_error (error);
+  g_assert_nonnull (tmp);
+
+  config_dir = g_build_filename (tmp, "config", NULL);
+  data_dir = g_build_filename (tmp, "data", NULL);
+  keyfile_path = g_build_filename (config_dir, "glib-2.0", "settings", "keyfile", NULL);
+
+  write_file (keyfile_path,
+              "[io/github/frostyard/Igloo]\n"
+              "color-scheme='dark'\n");
+
+  g_mutex_init (&test.mutex);
+  g_cond_init (&test.cond);
+  test.config_dir = g_strdup (config_dir);
+  test.data_dir = g_strdup (data_dir);
+
+  ptyxis_igloo_migration_set_locked_hook (locked_hook_cb, &test);
+  thread = g_thread_new ("igloo-migration", migration_thread_cb, &test);
+
+  g_mutex_lock (&test.mutex);
+  while (!test.inside)
+    g_cond_wait (&test.cond, &test.mutex);
+  g_mutex_unlock (&test.mutex);
+
+  /* The run holds the lock while it reads and writes: no second migration can
+   * take it. */
+  g_assert_cmpint (ptyxis_igloo_migration_try_lock (config_dir), ==, -1);
+
+  g_mutex_lock (&test.mutex);
+  test.go = TRUE;
+  g_cond_broadcast (&test.cond);
+  g_mutex_unlock (&test.mutex);
+
+  g_thread_join (thread);
+
+  /* The run is done and has released the lock. */
+  fd = ptyxis_igloo_migration_try_lock (config_dir);
+  g_assert_cmpint (fd, >=, 0);
+  close (fd);
+
+  key_file = g_key_file_new ();
+  g_assert_true (g_key_file_load_from_file (key_file, keyfile_path, G_KEY_FILE_NONE, &error));
+  g_assert_no_error (error);
+  g_assert_true (g_key_file_has_group (key_file, "org/frostyard/Igloo"));
+  g_assert_false (g_key_file_has_group (key_file, "io/github/frostyard/Igloo"));
+
+  ptyxis_igloo_migration_set_locked_hook (NULL, NULL);
+
+  g_cond_clear (&test.cond);
+  g_mutex_clear (&test.mutex);
+  g_clear_pointer (&test.config_dir, g_free);
+  g_clear_pointer (&test.data_dir, g_free);
+
+  remove_tree (tmp);
+}
+
+static void
+test_run_nothing_old (void){
   g_autoptr(GError) error = NULL;
   g_autofree char *tmp = g_dir_make_tmp ("igloo-migration-XXXXXX", &error);
   g_autofree char *config_dir = NULL;
@@ -339,6 +454,7 @@ main (int   argc,
   g_test_add_func ("/igloo-migration/rewrite-lines", test_rewrite_lines);
   g_test_add_func ("/igloo-migration/run", test_run);
   g_test_add_func ("/igloo-migration/run-nothing-old", test_run_nothing_old);
+  g_test_add_func ("/igloo-migration/run-holds-lock", test_run_holds_lock);
 
   return g_test_run ();
 }

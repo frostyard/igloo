@@ -76,7 +76,7 @@ test("the risk-path list covers the release, the sandbox boundary and the destru
   }
 });
 
-test("flatpak.yml publishes the previous ID end-of-life, rebased to the new ID, before latest moves", () => {
+test("flatpak.yml publishes the previous ID end-of-life, rebased to the new ID, after latest moves", () => {
   // docs/adr/0003-rename-the-application-id.md: without this image, installed
   // copies of io.github.frostyard.Igloo never move to org.frostyard.Igloo.
   const workflow = read(".github/workflows/flatpak.yml");
@@ -85,11 +85,21 @@ test("flatpak.yml publishes the previous ID end-of-life, rebased to the new ID, 
   assert.match(workflow, /--end-of-life-rebase="\$PREVIOUS_APP_ID=\$APP_ID"/);
   assert.match(workflow, /repo "app\/\$PREVIOUS_APP_ID\/x86_64\/master"/);
   assert.match(workflow, /build-bundle --oci --arch=x86_64 repo oci\/igloo-eol\.oci "\$PREVIOUS_APP_ID"/);
-  const pushEol = workflow.indexOf('docker://$IMAGE:$PREVIOUS_APP_ID"');
-  const attestEol = workflow.indexOf("steps.push-eol.outputs.digest");
+  // An index built between 2 steps must never offer a rebase to an ID that it
+  // does not list, so latest (the new ID) moves first.
+  // The tag that the index reads moves only after the digest is attested.
   const latest = workflow.indexOf('docker://$IMAGE:latest"');
-  assert.ok(pushEol > 0 && attestEol > pushEol, "the end-of-life image is pushed, then attested");
-  assert.ok(latest > attestEol, "latest moves only after the end-of-life image is attested");
+  const pushEol = workflow.indexOf("oci:oci/igloo-eol.oci");
+  const attestEol = workflow.indexOf("subject-digest: ${{ steps.push-eol.outputs.digest }}");
+  const tagEol = workflow.indexOf('docker://$IMAGE:$PREVIOUS_APP_ID"');
+  assert.ok(latest > 0 && pushEol > latest, "the end-of-life image is pushed only after latest moves");
+  assert.ok(attestEol > pushEol, "the end-of-life image is attested after its push");
+  assert.ok(tagEol > attestEol, "the old ID's tag moves only after the attestation");
+  assert.doesNotMatch(
+    workflow.slice(pushEol, attestEol),
+    /docker:\/\/\$IMAGE:\$PREVIOUS_APP_ID"/,
+    "the first push of the end-of-life image must not use the tag that the index reads",
+  );
 });
 
 // The prerequisites and recipe commands of the Makefile's ci target.

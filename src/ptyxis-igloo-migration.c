@@ -21,7 +21,10 @@
 #include "config.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <string.h>
+#include <sys/file.h>
+#include <unistd.h>
 
 #include <glib.h>
 #include <glib/gstdio.h>
@@ -42,6 +45,92 @@
  * repeated here so that this file compiles with GLib and GIO alone.
  */
 char **ptyxis_get_xdg_terminals_list_paths (void);
+
+/* The migration holds this file's lock while it reads and writes, so that only
+ * 1 process migrates at a time.
+ */
+#define MIGRATION_LOCK_FILE ".igloo-migration.lock"
+
+static GFunc migration_locked_hook;
+static gpointer migration_locked_hook_data;
+
+void
+ptyxis_igloo_migration_set_locked_hook (GFunc    hook,
+                                        gpointer data)
+{
+  migration_locked_hook = hook;
+  migration_locked_hook_data = data;
+}
+
+static char *
+migration_lock_path (const char *config_dir)
+{
+  return g_build_filename (config_dir, MIGRATION_LOCK_FILE, NULL);
+}
+
+/* Create @config_dir when needed and open the lock file. The caller owns the
+ * returned descriptor and the lock it takes on it. This is the 1 place that
+ * names the lock file.
+ */
+static int
+migration_lock_open (const char *config_dir,
+                     GError    **error)
+{
+  g_autofree char *path = migration_lock_path (config_dir);
+  int fd;
+
+  if (g_mkdir_with_parents (config_dir, 0700) != 0)
+    {
+      int saved_errno = errno;
+
+      g_set_error (error, G_FILE_ERROR, g_file_error_from_errno (saved_errno),
+                   "Could not create %s: %s", config_dir, g_strerror (saved_errno));
+      return -1;
+    }
+
+  do
+    fd = open (path, O_RDWR | O_CREAT | O_CLOEXEC, 0600);
+  while (fd == -1 && errno == EINTR);
+
+  if (fd == -1)
+    {
+      int saved_errno = errno;
+
+      g_set_error (error, G_FILE_ERROR, g_file_error_from_errno (saved_errno),
+                   "Could not open %s: %s", path, g_strerror (saved_errno));
+    }
+
+  return fd;
+}
+
+/* Take the migration lock without waiting. Returns the locked descriptor, which
+ * the caller closes, or -1 when another process holds the lock. For tests only:
+ * the migration itself holds the lock for the whole run.
+ */
+int
+ptyxis_igloo_migration_try_lock (const char *config_dir)
+{
+  g_autoptr(GError) error = NULL;
+  int fd;
+
+  g_return_val_if_fail (config_dir != NULL, -1);
+
+  fd = migration_lock_open (config_dir, &error);
+
+  if (fd == -1)
+    {
+      g_warning ("%s", error->message);
+      return -1;
+    }
+
+  if (flock (fd, LOCK_EX | LOCK_NB) != 0)
+    {
+      close (fd);
+      return -1;
+    }
+
+  return fd;
+}
 
 /* The group name of the keyfile backend is the settings path without the
  * leading and trailing "/": "/io/github/frostyard/Igloo/" is the group prefix
@@ -277,6 +366,18 @@ migrate_terminals_list (const char *path,
     g_warning ("Could not write %s: %s", path, error->message);
 }
 
+static gboolean
+any_terminals_list_exists (const char * const *terminal_lists)
+{
+  for (guint i = 0; terminal_lists != NULL && terminal_lists[i] != NULL; i++)
+    {
+      if (g_file_test (terminal_lists[i], G_FILE_TEST_EXISTS))
+        return TRUE;
+    }
+
+  return FALSE;
+}
+
 void
 ptyxis_igloo_migration_run (const char        *config_dir,
                             const char        *data_dir,
@@ -291,6 +392,9 @@ ptyxis_igloo_migration_run (const char        *config_dir,
   g_autofree char *old_data = NULL;
   g_autofree char *new_data = NULL;
   g_autofree char *keyfile_path = NULL;
+  g_autoptr(GError) error = NULL;
+  gboolean have_old = FALSE;
+  int lock_fd;
 
   g_return_if_fail (config_dir != NULL);
   g_return_if_fail (data_dir != NULL);
@@ -305,18 +409,59 @@ ptyxis_igloo_migration_run (const char        *config_dir,
    */
   old_config = g_build_filename (config_dir, old_id, NULL);
   new_config = g_build_filename (config_dir, new_id, NULL);
-  move_directory (old_config, new_config);
-
   old_data = g_build_filename (data_dir, old_id, NULL);
   new_data = g_build_filename (data_dir, new_id, NULL);
+  keyfile_path = g_build_filename (config_dir, "glib-2.0", "settings", "keyfile", NULL);
+
+  /* Check cheaply, before the lock costs anything, that something of the old
+   * name can exist. After a migration nothing does, and no file is created.
+   */
+  have_old = g_file_test (old_config, G_FILE_TEST_EXISTS) ||
+             g_file_test (old_data, G_FILE_TEST_EXISTS) ||
+             g_file_test (keyfile_path, G_FILE_TEST_EXISTS) ||
+             any_terminals_list_exists (terminal_lists);
+
+  if (!have_old)
+    return;
+
+  /* Two Igloo processes can start together on the first run after the update,
+   * and each one would read the keyfile, migrate its own copy and write it
+   * back. The later write would then undo the settings the other process saved
+   * in between (atomic replacement does not help: the snapshot is stale). So
+   * only 1 process migrates, and it reads every input after it holds the lock.
+   * Without the lock the migration does not run at all.
+   */
+  lock_fd = migration_lock_open (config_dir, &error);
+
+  if (lock_fd == -1)
+    {
+      g_warning ("Could not lock the Igloo migration: %s", error->message);
+      return;
+    }
+
+  while (flock (lock_fd, LOCK_EX) != 0)
+    {
+      if (errno == EINTR)
+        continue;
+
+      g_warning ("Could not lock the Igloo migration: %s", g_strerror (errno));
+      close (lock_fd);
+      return;
+    }
+
+  if (migration_locked_hook != NULL)
+    migration_locked_hook (NULL, migration_locked_hook_data);
+
+  move_directory (old_config, new_config);
   move_directory (old_data, new_data);
 
   /* The Flatpak uses the GLib keyfile backend for GSettings. */
-  keyfile_path = g_build_filename (config_dir, "glib-2.0", "settings", "keyfile", NULL);
   migrate_settings_keyfile (keyfile_path, old_path, new_path);
 
   for (guint i = 0; terminal_lists != NULL && terminal_lists[i] != NULL; i++)
     migrate_terminals_list (terminal_lists[i], old_id, new_id);
+
+  close (lock_fd);
 }
 
 void

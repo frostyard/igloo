@@ -9,8 +9,9 @@ name: Flatpak
 # The app ID was io.github.frostyard.Igloo until it became org.frostyard.Igloo
 # (core ADR-0016; docs/adr/0003-rename-the-application-id.md). Each v* tag
 # also publishes the old ID once more, marked end-of-life with a rebase to the
-# new ID, as the tag io.github.frostyard.Igloo of the same image. flatpak
-# update then moves installed copies to the new ID, with their data.
+# new ID, as the tag io.github.frostyard.Igloo of the same image, after latest
+# moves. flatpak update then moves installed copies to the new ID, with their
+# data.
 #
 # Every action is pinned to a commit SHA (core ADR-0021); Dependabot bumps the
 # SHA and the version comment together.
@@ -128,13 +129,20 @@ jobs:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.push.outputs.digest }}
 
-      # The old ID's end-of-life image goes out, attested, before latest
-      # moves to the new ID, so the remote lists the rebase as soon as it
-      # lists the new ID.
+      - name: Move latest to the attested digest
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: skopeo copy --preserve-digests "docker://$IMAGE@$DIGEST" "docker://$IMAGE:latest"
+
+      # The old ID's end-of-life image goes out only after latest names the
+      # new ID: an index built at any moment never offers a rebase to an ID
+      # it does not list. Until its tag exists, the old ID is absent from the
+      # index, and installed copies keep running. As with latest, the tag
+      # that the index reads moves only after the digest is attested.
       - name: Push the old ID's end-of-life image to GHCR
         id: push-eol
         run: |
-          skopeo copy --digestfile digest-eol oci:oci/igloo-eol.oci "docker://$IMAGE:$PREVIOUS_APP_ID"
+          skopeo copy --digestfile digest-eol oci:oci/igloo-eol.oci "docker://$IMAGE:sha-${GITHUB_SHA::12}-eol"
           echo "digest=$(cat digest-eol)" >> "$GITHUB_OUTPUT"
 
       - name: Attest the end-of-life image
@@ -143,10 +151,10 @@ jobs:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.push-eol.outputs.digest }}
 
-      - name: Move latest to the attested digest
+      - name: Move the old ID's tag to the attested end-of-life digest
         env:
-          DIGEST: ${{ steps.push.outputs.digest }}
-        run: skopeo copy --preserve-digests "docker://$IMAGE@$DIGEST" "docker://$IMAGE:latest"
+          DIGEST: ${{ steps.push-eol.outputs.digest }}
+        run: skopeo copy --preserve-digests "docker://$IMAGE@$DIGEST" "docker://$IMAGE:$PREVIOUS_APP_ID"
 
       - name: Refresh the Frostyard remote
         if: env.DISPATCH_TOKEN != ''

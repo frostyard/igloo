@@ -49,7 +49,11 @@ flatpak install --user flathub org.gnome.Sdk//51 org.flatpak.Builder
 - `.github/workflows/flatpak.yml` builds the manifest with its tests on every
   push and pull request, as the release builds it, and keeps the bundle
   `igloo-flatpak` as an artifact. To try a pull request, unzip that artifact
-  and run `flatpak install --user igloo.flatpak`.
+  and run `flatpak install --user igloo.flatpak`. On a computer that still
+  has `io.github.frostyard.Igloo`, the bundle's first run creates
+  `~/.var/app/org.frostyard.Igloo`, and the later rebase then leaves the old
+  settings in `~/.var/app/io.github.frostyard.Igloo`: back up both folders
+  first, and test on a computer without the old ID where you can.
 
 ### Release
 
@@ -67,7 +71,8 @@ The same tag run also publishes the previous application ID,
 old ref and marks it end-of-life with a rebase to `org.frostyard.Igloo`, and
 `flatpak build-bundle --oci` carries that mark as the image label
 `org.flatpak.commit-metadata.ostree.endoflife-rebase`. It is pushed and
-attested before `latest` moves. frostyard/flatpak-index must list that tag
+attested after `latest` moves to the new ID, so an index never offers a
+rebase to an ID it does not list. frostyard/flatpak-index must list that tag
 for the mark to reach users. `flatpak update` (and GNOME Software) then
 replaces an installed `io.github.frostyard.Igloo` with
 `org.frostyard.Igloo` and moves `~/.var/app/io.github.frostyard.Igloo` to
