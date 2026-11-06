@@ -48,7 +48,9 @@ its installation guide.
 
 Igloo is on the [Frostyard Flatpak remote](https://github.com/frostyard/flatpak-index).
 Add it and Flathub (for the GNOME 51 runtime) once, for your user, then
-install Igloo and update it with `flatpak update`:
+install Igloo and update it with `flatpak update`. A `--user` install gets a
+missing runtime only from a user remote, so Flathub must be a user remote
+too:
 
 ```sh
 flatpak remote-add --user --if-not-exists frostyard https://frostyard.github.io/flatpak-index/frostyard.flatpakrepo

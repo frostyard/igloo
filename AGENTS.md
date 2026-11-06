@@ -49,8 +49,14 @@ them rather than improvising, whichever agent you are. Start a new one from
   `testsuite/nsl/` from real nsl output and keep the minimum nsl version
   (0.8.0) in `README.md` true.
 - **Never poll nsl.** An `nsl list` against a running VM counts as activity
-  and keeps the VM from idling. `agent/ptyxis-nsl-provider.c` reloads on file
-  changes only.
+  and keeps the VM from idling. `agent/ptyxis-nsl-provider.c` reloads at
+  startup, when nsl's files change, after a Machines page command or a
+  rescan (*Check Again*), and twice (after 5 s and 20 s) after a terminal
+  starts a machine; never on a repeating timer.
+- **Moving docs keeps every fact.** When text moves out of `README.md` or
+  between docs, each fact of the old text lands in its new place, or the PR
+  says why it is dropped. Compare the old text sentence by sentence before
+  you call the move done.
 - **Tests** are C programs in `testsuite/`, registered in
   `testsuite/meson.build`. `make test` builds and runs them in the GNOME 51
   SDK.

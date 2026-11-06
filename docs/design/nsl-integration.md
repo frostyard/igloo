@@ -10,7 +10,8 @@ Contracts: nsl's
 
 Igloo opens [nsl](https://frostyard.github.io/nsl/) machines the way Ptyxis
 opens Podman, Toolbox and Distrobox containers, and manages them from a
-*Machines* page in Preferences. Like Ptyxis, Igloo runs `ptyxis-agent` on the
+*Machines* page in Preferences. nsl runs WSL-style Linux machines on atomic
+Linux hosts: systemd-nspawn containers inside a systemd-vmspawn VM. Like Ptyxis, Igloo runs `ptyxis-agent` on the
 host, outside the Flatpak sandbox, and talks to it over a private D-Bus
 connection. nsl always runs on the host, through the agent.
 
@@ -66,18 +67,28 @@ asks the user to update.
 - **Profiles and sessions.** A profile's *Default Container* can be an nsl
   machine, and pinned or restored tabs reopen in their machine. New tabs keep
   the current machine as they keep the current container.
-- **Machines page** (`src/ptyxis-machines-page.c`): every machine with its
-  distribution, tier, state and default marker; *New Machine*
-  (`src/ptyxis-machine-create-dialog.c`, runs `nsl create` in a terminal) and
-  *Import Machine…* (`src/ptyxis-machine-import-dialog.c`, runs `nsl import`);
-  per machine *Open Terminal*, *Start*/*Stop*, *Make Default*, *Edit
-  Profile…*, *Export…* (`nsl export NAME FILE`; a running machine is stopped
-  first, after a confirmation) and *Remove…* (`nsl stop`, then
-  `nsl remove --yes`, after a confirmation); *Resources* (shared VM memory and
-  processors, autostart, idle timeout, isolated VM resources, written to
-  `nsl.conf`); and *Host* (`nsl doctor`, `nsl update`, `nsl shutdown`).
-  Long commands run in a terminal (`src/ptyxis-machine-command-dialog.c`) so
-  downloads and verification are visible.
+- **Main menu → Machines** opens the *Machines* page in Preferences
+  (`src/ptyxis-machines-page.c`):
+  - every machine with its distribution, tier, state and default marker;
+  - *New Machine* (`src/ptyxis-machine-create-dialog.c`) asks for a name, a
+    distribution from the signed nsl catalogue, isolation, default and an
+    optional username, then runs `nsl create` in a terminal so downloads and
+    verification are visible, and offers to open the new machine;
+  - *Import Machine…* (`src/ptyxis-machine-import-dialog.c`) asks for an
+    archive, then a name and isolation, then runs `nsl import` in a terminal
+    and offers to open the machine;
+  - per machine: *Open Terminal*, *Start*/*Stop*, *Make Default*,
+    *Edit Profile…* (creates or opens a profile whose default container is
+    the machine, for its own palette, font and command), *Export…* (asks for
+    a file, NAME-DATE.tar by default, then runs `nsl export NAME FILE` in a
+    terminal; a running machine is stopped first, after a confirmation; nsl
+    never replaces a file) and *Remove…* (`nsl stop` then
+    `nsl remove --yes`, after a confirmation);
+  - *Resources*: shared VM memory and processors, autostart, idle timeout and
+    isolated VM resources, written to `nsl.conf`;
+  - *Host*: `nsl doctor`, `nsl update` and `nsl shutdown`.
+
+  Long commands run in a terminal (`src/ptyxis-machine-command-dialog.c`).
 - In the Flatpak, a file outside the folders Igloo can see comes from the
   document portal, and Igloo gives nsl its real path on the host.
 
