@@ -36,10 +36,11 @@ that metadata from the image label
   `io.github.frostyard.Igloo` of `ghcr.io/frostyard/igloo`: a copy of the
   new build under the old ref, marked end-of-life with a rebase to
   `org.frostyard.Igloo` (`flatpak build-commit-from --end-of-life-rebase`).
-  It is pushed and attested after `latest` moves to the new ID, so an
-  index built at any moment never offers a rebase to an ID that it does
-  not list; as with `latest`, the tag that the index reads moves only
-  after the digest is attested.
+  It is pushed and attested after `latest` moves to the new ID; as with
+  `latest`, the tag that the index reads moves only after the digest is
+  attested. An index run that reads `latest` before the release job and
+  the end-of-life tag after it can still list the rebase without its
+  target; frostyard/flatpak-index must refuse such a snapshot.
 - The desktop file names the old one in `X-Flatpak-RenamedFrom`, and the
   AppStream data names the old ID in `<replaces>`.
 - At startup, before it reads settings or files, Igloo moves what still

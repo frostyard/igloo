@@ -135,10 +135,13 @@ jobs:
         run: skopeo copy --preserve-digests "docker://$IMAGE@$DIGEST" "docker://$IMAGE:latest"
 
       # The old ID's end-of-life image goes out only after latest names the
-      # new ID: an index built at any moment never offers a rebase to an ID
-      # it does not list. Until its tag exists, the old ID is absent from the
-      # index, and installed copies keep running. As with latest, the tag
-      # that the index reads moves only after the digest is attested.
+      # new ID, so an index that reads the tags after this job always lists
+      # the rebase target. An index run that reads latest before this job
+      # and the end-of-life tag after it can still miss the target until its
+      # next run; frostyard/flatpak-index must refuse such a snapshot. Until
+      # its tag exists, the old ID is absent from the index, and installed
+      # copies keep running. As with latest, the tag that the index reads
+      # moves only after the digest is attested.
       - name: Push the old ID's end-of-life image to GHCR
         id: push-eol
         run: |

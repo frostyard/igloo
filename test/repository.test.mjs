@@ -85,8 +85,8 @@ test("flatpak.yml publishes the previous ID end-of-life, rebased to the new ID, 
   assert.match(workflow, /--end-of-life-rebase="\$PREVIOUS_APP_ID=\$APP_ID"/);
   assert.match(workflow, /repo "app\/\$PREVIOUS_APP_ID\/x86_64\/master"/);
   assert.match(workflow, /build-bundle --oci --arch=x86_64 repo oci\/igloo-eol\.oci "\$PREVIOUS_APP_ID"/);
-  // An index built between 2 steps must never offer a rebase to an ID that it
-  // does not list, so latest (the new ID) moves first.
+  // latest (the new ID) moves first, so an index that reads the tags after
+  // the release job always lists the rebase target.
   // The tag that the index reads moves only after the digest is attested.
   const latest = workflow.indexOf('docker://$IMAGE:latest"');
   const pushEol = workflow.indexOf("oci:oci/igloo-eol.oci");

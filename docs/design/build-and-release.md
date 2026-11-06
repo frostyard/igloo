@@ -71,9 +71,11 @@ The same tag run also publishes the previous application ID,
 old ref and marks it end-of-life with a rebase to `org.frostyard.Igloo`, and
 `flatpak build-bundle --oci` carries that mark as the image label
 `org.flatpak.commit-metadata.ostree.endoflife-rebase`. It is pushed and
-attested after `latest` moves to the new ID, so an index never offers a
-rebase to an ID it does not list. frostyard/flatpak-index must list that tag
-for the mark to reach users. `flatpak update` (and GNOME Software) then
+attested after `latest` moves to the new ID. An index run that reads
+`latest` before the release job and the end-of-life tag after it can still
+list the rebase without its target, so frostyard/flatpak-index must refuse
+an image whose end-of-life rebase target is not in the same index. The index
+must also list that tag for the mark to reach users. `flatpak update` (and GNOME Software) then
 replaces an installed `io.github.frostyard.Igloo` with
 `org.frostyard.Igloo` and moves `~/.var/app/io.github.frostyard.Igloo` to
 the new ID on its first run; Igloo itself then moves the settings and files
