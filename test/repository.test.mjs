@@ -5,7 +5,8 @@
 //   - .github/risk-paths.json covers the release workflow, the manifest and
 //     the code that runs outside the Flatpak sandbox or removes machines;
 //   - ci.yml runs every part of `make ci` (frostyard/core ADR-0073);
-//   - make corrections-base fails closed on a BASE it cannot read.
+//   - make corrections-base fails closed on a BASE it cannot read;
+//   - the CI test job gives root the checkout before flatpak build runs.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
@@ -112,6 +113,16 @@ test("ci.yml runs every prerequisite and recipe command of make ci", () => {
   for (const command of recipe) {
     assert.ok(runs.includes(command), `no ci.yml step runs the ci recipe command: ${command}`);
   }
+});
+
+test("ci.yml gives the container's root the checkout before make test", () => {
+  // flatpak build drops root's capabilities, so root must own the checkout
+  // that the runner's user checked out, or meson cannot create _build.
+  const runs = runCommands(read(".github/workflows/ci.yml"));
+  const chown = runs.findIndex((run) => /^chown -R "\$\(id -u\):\$\(id -g\)" "\$GITHUB_WORKSPACE"$/.test(run));
+  const makeTest = runs.findIndex((run) => /^make test(\s|$)/.test(run));
+  assert.notEqual(chown, -1, "ci.yml has no chown step for the checkout");
+  assert.ok(chown < makeTest, "the chown step must come before make test");
 });
 
 test("the parser above reads prerequisites and recipe commands", () => {
