@@ -3,7 +3,8 @@
 // check by itself (docs/adr/0002-adopt-the-repository-baseline.md):
 //   - LICENSE stays a byte-identical copy of upstream's COPYING;
 //   - .github/risk-paths.json covers the release workflow, the manifest and
-//     the code that runs outside the Flatpak sandbox or removes machines;
+//     the code that runs outside the Flatpak sandbox or removes machines, at
+//     L1 or L2 (the levels that get risk:high);
 //   - ci.yml runs every part of `make ci` (frostyard/core ADR-0073);
 //   - make corrections-base fails closed on a BASE it cannot read;
 //   - the CI test job gives root the checkout before flatpak build runs.
@@ -22,7 +23,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { matchGlob } from "../scripts/lib/risk-paths.mjs";
+import { LEVELS, matchGlob } from "../scripts/lib/risk-paths.mjs";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const temporary = [];
@@ -45,6 +46,19 @@ function files(relative) {
   return found;
 }
 
+// A path gets risk:high only from a glob at L1 or L2, so the coverage checks
+// below require such a match. Only an entry without a level is L1 (a version 1
+// list); an explicit null or an unknown level fails, and the strictest matching
+// entry wins, as in scripts/lib/risk-paths.mjs: a path that only an L3 or L4
+// glob matches gets no risk:high.
+function riskHighCoverage(entries, path) {
+  const levels = entries
+    .filter((entry) => matchGlob(entry.glob, path))
+    .map((entry) => ("level" in entry ? entry.level : "L1"));
+  if (levels.length === 0 || levels.some((level) => !LEVELS.includes(level))) return false;
+  return levels.some((level) => level === "L1" || level === "L2");
+}
+
 test("LICENSE is a byte-identical copy of COPYING", () => {
   assert.ok(
     readFileSync(join(repo, "LICENSE")).equals(readFileSync(join(repo, "COPYING"))),
@@ -62,17 +76,18 @@ test("the risk-path list covers the release, the sandbox boundary and the destru
     "src/ptyxis-machine-command-dialog.c",
     "src/ptyxis-igloo-migration.c",
   ];
-  const missing = required.filter((path) => !paths.some((entry) => matchGlob(entry.glob, path)));
-  assert.deepEqual(missing, [], `no glob in .github/risk-paths.json matches: ${missing.join(", ")}`);
+  const missing = required.filter((path) => !riskHighCoverage(paths, path));
+  assert.deepEqual(
+    missing,
+    [],
+    `no L1 or L2 glob in .github/risk-paths.json matches: ${missing.join(", ")}`,
+  );
 
   // flatpak.yml publishes; it needs its own publication entry, not only the
   // governance entry for every workflow.
   const publication = paths.filter((entry) => entry.why.startsWith("publication:"));
   for (const path of [".github/workflows/flatpak.yml", "org.frostyard.Igloo.json"]) {
-    assert.ok(
-      publication.some((entry) => matchGlob(entry.glob, path)),
-      `${path} has no publication entry`,
-    );
+    assert.ok(riskHighCoverage(publication, path), `${path} has no publication entry at L1 or L2`);
   }
 });
 
@@ -99,6 +114,44 @@ test("flatpak.yml publishes the previous ID end-of-life, rebased to the new ID, 
     workflow.slice(pushEol, attestEol),
     /docker:\/\/\$IMAGE:\$PREVIOUS_APP_ID"/,
     "the first push of the end-of-life image must not use the tag that the index reads",
+  );
+});
+
+test("the coverage helper requires an L1 or L2 glob", () => {
+  const entry = (glob, level) =>
+    level === undefined ? { glob, why: "test" } : { glob, level, why: "test" };
+  assert.equal(
+    riskHighCoverage([entry("src/**", "L3")], "src/a.c"),
+    false,
+    "an L3 glob alone must not cover a file",
+  );
+  assert.equal(
+    riskHighCoverage([entry("src/**", "L4")], "src/a.c"),
+    false,
+    "an L4 glob alone must not cover a file",
+  );
+  assert.equal(riskHighCoverage([entry("src/**", "L1")], "src/a.c"), true, "an L1 glob covers a file");
+  assert.equal(riskHighCoverage([entry("src/**", "L2")], "src/a.c"), true, "an L2 glob covers a file");
+  assert.equal(riskHighCoverage([entry("src/**")], "src/a.c"), true, "an entry with no level is L1");
+  assert.equal(
+    riskHighCoverage([entry("src/**", null)], "src/a.c"),
+    false,
+    "an explicit null level must not cover a file",
+  );
+  assert.equal(
+    riskHighCoverage([entry("src/**", "L5")], "src/a.c"),
+    false,
+    "an unknown level must not cover a file",
+  );
+  assert.equal(
+    riskHighCoverage([entry("src/**", "L3"), entry("src/a.c", "L1")], "src/a.c"),
+    true,
+    "the strictest matching level wins, so an overlapping L1 glob passes",
+  );
+  assert.equal(
+    riskHighCoverage([entry("src/**", "L3")], "docs/a.md"),
+    false,
+    "no matching glob is no coverage",
   );
 });
 
