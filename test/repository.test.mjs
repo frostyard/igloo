@@ -47,13 +47,14 @@ function files(relative) {
 }
 
 // A path gets risk:high only from a glob at L1 or L2, so the coverage checks
-// below require such a match. An entry with no level is L1 (a version 1 list),
-// and the strictest matching entry wins, as in scripts/lib/risk-paths.mjs: a
-// path that only an L3 or L4 glob matches gets no risk:high.
+// below require such a match. Only an entry without a level is L1 (a version 1
+// list); an explicit null or an unknown level fails, and the strictest matching
+// entry wins, as in scripts/lib/risk-paths.mjs: a path that only an L3 or L4
+// glob matches gets no risk:high.
 function riskHighCoverage(entries, path) {
   const levels = entries
     .filter((entry) => matchGlob(entry.glob, path))
-    .map((entry) => entry.level ?? "L1");
+    .map((entry) => ("level" in entry ? entry.level : "L1"));
   if (levels.length === 0 || levels.some((level) => !LEVELS.includes(level))) return false;
   return levels.some((level) => level === "L1" || level === "L2");
 }
@@ -132,6 +133,16 @@ test("the coverage helper requires an L1 or L2 glob", () => {
   assert.equal(riskHighCoverage([entry("src/**", "L1")], "src/a.c"), true, "an L1 glob covers a file");
   assert.equal(riskHighCoverage([entry("src/**", "L2")], "src/a.c"), true, "an L2 glob covers a file");
   assert.equal(riskHighCoverage([entry("src/**")], "src/a.c"), true, "an entry with no level is L1");
+  assert.equal(
+    riskHighCoverage([entry("src/**", null)], "src/a.c"),
+    false,
+    "an explicit null level must not cover a file",
+  );
+  assert.equal(
+    riskHighCoverage([entry("src/**", "L5")], "src/a.c"),
+    false,
+    "an unknown level must not cover a file",
+  );
   assert.equal(
     riskHighCoverage([entry("src/**", "L3"), entry("src/a.c", "L1")], "src/a.c"),
     true,
