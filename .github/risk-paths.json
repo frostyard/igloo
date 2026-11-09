@@ -1,60 +1,75 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "default_level": "L3",
   "paths": [
     {
       "glob": ".github/risk-paths.json",
+      "level": "L2",
       "why": "governance: the high-risk path list"
     },
     {
       "glob": ".github/workflows/**",
+      "level": "L2",
       "why": "governance: CI, the risk-paths caller and token permissions"
     },
     {
       "glob": ".github/workflows/flatpak.yml",
+      "level": "L1",
       "why": "publication: builds, pushes and attests the Flatpak OCI image that the Frostyard remote serves on v* tags"
     },
     {
       "glob": "org.frostyard.Igloo.json",
+      "level": "L1",
       "why": "publication: the Flatpak manifest that releases build, with the pinned sources and checksums of its dependencies"
     },
     {
       "glob": "Makefile",
+      "level": "L2",
       "why": "governance: the verify gate"
     },
     {
       "glob": "scripts/check-template.mjs",
+      "level": "L2",
       "why": "governance: the template verification gate"
     },
     {
       "glob": "scripts/check-corrections.mjs",
+      "level": "L2",
       "why": "governance: the corrections validation gate"
     },
     {
       "glob": "scripts/lib/**",
+      "level": "L2",
       "why": "governance: the vendored risk-path validator and matcher"
     },
     {
       "glob": "mise.toml",
+      "level": "L1",
       "why": "update verification: the tool pins that CI installs, checked against mise.lock"
     },
     {
       "glob": "mise.lock",
+      "level": "L1",
       "why": "update verification: the checksums of the tools that CI installs"
     },
     {
       "glob": "agent/**",
+      "level": "L1",
       "why": "auth: ptyxis-agent runs on the host outside the Flatpak sandbox and spawns host processes for the app"
     },
     {
       "glob": "src/ptyxis-machines-page.c",
+      "level": "L1",
       "why": "destructive operations: machine removal, stop, export and nsl update and shutdown from the Machines page"
     },
     {
       "glob": "src/ptyxis-machine-command-dialog.c",
+      "level": "L1",
       "why": "destructive operations: runs the Machines page's nsl commands on the host and interrupts them"
     },
     {
       "glob": "src/ptyxis-igloo-migration.c",
+      "level": "L1",
       "why": "destructive operations: migrates the user's settings and files from the previous application ID"
     }
   ]
