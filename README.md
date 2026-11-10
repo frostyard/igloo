@@ -27,12 +27,13 @@ settings.
   Container* can be an nsl machine, and pinned or restored tabs reopen in
   their machine.
 - **Manages machines.** *Main menu → Machines* creates, imports, starts,
-  stops, exports and removes machines, and edits a profile for each.
+  stops, exports and removes machines, shows their logs, recovers a stuck
+  VM, and edits a profile for each.
   Long nsl commands run in a terminal, so downloads and verification are
   visible.
 - **Sets nsl's resources.** Shared VM memory and processors, autostart and
-  the idle timeout, written to `nsl.conf`; and `nsl doctor`, `nsl update`
-  and `nsl shutdown`.
+  the idle timeout, written to `nsl.conf`; and `nsl doctor`, `nsl update`,
+  `nsl logs`, `nsl recover` and `nsl shutdown`.
 - **Follows your directory.** A new tab starts where the last one was, in
   host or machine terms, as nsl maps them.
   [Working directories](docs/design/nsl-integration.md#working-directories)

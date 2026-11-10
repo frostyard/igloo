@@ -90,7 +90,8 @@ asks the user to update.
     isolated VM resources, written to `nsl.conf`;
   - *Host*: `nsl doctor`, `nsl update`, `nsl logs`, `nsl recover` (after a
     confirmation that says it restarts the shared VM from a fresh root and
-    keeps machines) and `nsl shutdown`.
+    keeps machines) and `nsl shutdown`. `nsl recover` always starts the VM
+    again, also a VM that was stopped; both confirmations say so.
 
   Long commands run in a terminal (`src/ptyxis-machine-command-dialog.c`).
   Logs and recovery commands run as argument arrays, not through a shell.

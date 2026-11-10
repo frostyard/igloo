@@ -1407,8 +1407,11 @@ ptyxis_machines_page_logs_action (GtkWidget  *widget,
     return;
 
   argv = ptyxis_machine_logs_argv (path, name);
-  /* translators: %s is a machine name */
-  title = name ? g_strdup_printf (_("Logs of %s"), name) : g_strdup (_("Logs"));
+  if (name != NULL)
+    /* translators: %s is a machine name */
+    title = g_strdup_printf (_("Logs of %s"), name);
+  else
+    title = g_strdup (_("Logs"));
   dialog = ptyxis_machines_page_present_command (self, title, (const char * const *)argv);
   ptyxis_machine_command_dialog_set_messages (dialog,
                                               _("Reading recent logs…"),
@@ -1471,19 +1474,22 @@ ptyxis_machines_page_recover_action (GtkWidget  *widget,
   if (nsl_path (self) == NULL)
     return;
 
-  /* translators: %s is a machine name */
-  heading = name ? g_strdup_printf (_("Recover %s?"), name) : g_strdup (_("Recover the Shared VM?"));
+  if (name != NULL)
+    /* translators: %s is a machine name */
+    heading = g_strdup_printf (_("Recover %s?"), name);
+  else
+    heading = g_strdup (_("Recover the Shared VM?"));
   alert = adw_alert_dialog_new (heading, NULL);
   if (name != NULL)
     {
       /* translators: %s is a machine name */
       adw_alert_dialog_format_body (ADW_ALERT_DIALOG (alert),
-                                    _("nsl stops %s and its own VM, then restarts the VM from a fresh root. Programs running in %s will close. The machine, its files and keys are kept."),
+                                    _("nsl stops %s and its own VM, then starts the VM again from a fresh root. The VM runs afterwards, even if it was stopped. Programs running in %s will close. The machine, its files and keys are kept."),
                                     name, name);
     }
   else
     adw_alert_dialog_set_body (ADW_ALERT_DIALOG (alert),
-                               _("nsl stops the shared VM and every machine in it, then restarts the VM from a fresh root. Programs running in these machines will close. Machines, their files and keys are kept."));
+                               _("nsl stops the shared VM and every machine in it, then starts the VM again from a fresh root. The VM runs afterwards, even if it was stopped. Programs running in these machines will close. Machines, their files and keys are kept."));
 
   adw_alert_dialog_add_responses (ADW_ALERT_DIALOG (alert),
                                   "cancel", _("_Cancel"),
