@@ -27,6 +27,60 @@
 
 #include "ptyxis-machine-util.h"
 
+/**
+ * ptyxis_machine_logs_argv:
+ * @nsl: the path to nsl
+ * @name: (nullable): a machine name, or NULL for all logs
+ *
+ * Returns: (transfer full) (array zero-terminated=1): arguments for nsl logs
+ */
+char **
+ptyxis_machine_logs_argv (const char *nsl,
+                          const char *name)
+{
+  const char * const argv[] = { nsl, "logs", name, NULL };
+
+  g_return_val_if_fail (nsl != NULL, NULL);
+
+  /* A NULL name ends the array after the command */
+  return g_strdupv ((char **)argv);
+}
+
+/**
+ * ptyxis_machine_recover_argv:
+ * @nsl: the path to nsl
+ * @name: (nullable): an isolated machine name, or NULL for the shared VM
+ *
+ * Returns: (transfer full) (array zero-terminated=1): arguments for nsl recover
+ */
+char **
+ptyxis_machine_recover_argv (const char *nsl,
+                             const char *name)
+{
+  const char * const argv[] = { nsl, "recover", name, NULL };
+
+  g_return_val_if_fail (nsl != NULL, NULL);
+
+  /* A NULL name ends the array after the command */
+  return g_strdupv ((char **)argv);
+}
+
+/**
+ * ptyxis_machine_can_recover:
+ * @tier: (nullable): a machine tier
+ * @state: (nullable): a machine state
+ *
+ * Returns: whether the machine has its own VM and is usable for recovery
+ */
+gboolean
+ptyxis_machine_can_recover (const char *tier,
+                            const char *state)
+{
+  return g_strcmp0 (tier, "isolated") == 0 &&
+         g_strcmp0 (state, "incomplete") != 0 &&
+         g_strcmp0 (state, "removing") != 0;
+}
+
 #define DOCUMENTS_BUS_NAME "org.freedesktop.portal.Documents"
 #define DOCUMENTS_OBJECT_PATH "/org/freedesktop/portal/documents"
 #define DOCUMENTS_INTERFACE "org.freedesktop.portal.Documents"

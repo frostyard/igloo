@@ -82,13 +82,18 @@ asks the user to update.
     the machine, for its own palette, font and command), *Export…* (asks for
     a file, NAME-DATE.tar by default, then runs `nsl export NAME FILE` in a
     terminal; a running machine is stopped first, after a confirmation; nsl
-    never replaces a file) and *Remove…* (`nsl stop` then
+    never replaces a file), *Show Logs* (`nsl logs NAME`), *Recover…* (for
+    an isolated machine only: `nsl recover NAME`, after a confirmation) and
+    *Remove…* (`nsl stop` then
     `nsl remove --yes`, after a confirmation);
   - *Resources*: shared VM memory and processors, autostart, idle timeout and
     isolated VM resources, written to `nsl.conf`;
-  - *Host*: `nsl doctor`, `nsl update` and `nsl shutdown`.
+  - *Host*: `nsl doctor`, `nsl update`, `nsl logs`, `nsl recover` (after a
+    confirmation that says it restarts the shared VM from a fresh root and
+    keeps machines) and `nsl shutdown`.
 
   Long commands run in a terminal (`src/ptyxis-machine-command-dialog.c`).
+  Logs and recovery commands run as argument arrays, not through a shell.
 - In the Flatpak, a file outside the folders Igloo can see comes from the
   document portal, and Igloo gives nsl its real path on the host.
 
