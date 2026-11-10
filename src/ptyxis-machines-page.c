@@ -216,6 +216,7 @@ create_machine_row (PtyxisMachinesPage *self,
   g_autoptr(GMenu) menu = g_menu_new ();
   g_autoptr(GMenu) open_section = g_menu_new ();
   g_autoptr(GMenu) config_section = g_menu_new ();
+  g_autoptr(GMenu) diagnose_section = g_menu_new ();
   g_autoptr(GMenu) remove_section = g_menu_new ();
   g_autoptr(GString) subtitle = g_string_new (NULL);
   g_autofree char *description = NULL;
@@ -307,11 +308,26 @@ create_machine_row (PtyxisMachinesPage *self,
       g_clear_pointer (&detailed, g_free);
     }
 
+  if (usable)
+    {
+      detailed = g_strdup_printf ("machines.logs('%s')", name);
+      g_menu_append (diagnose_section, _("Show _Logs"), detailed);
+      g_clear_pointer (&detailed, g_free);
+    }
+
+  if (ptyxis_machine_can_recover (tier, state))
+    {
+      detailed = g_strdup_printf ("machines.recover('%s')", name);
+      g_menu_append (diagnose_section, _("Re_cover…"), detailed);
+      g_clear_pointer (&detailed, g_free);
+    }
+
   detailed = g_strdup_printf ("machines.remove('%s')", name);
   g_menu_append (remove_section, _("_Remove…"), detailed);
 
   g_menu_append_section (menu, NULL, G_MENU_MODEL (open_section));
   g_menu_append_section (menu, NULL, G_MENU_MODEL (config_section));
+  g_menu_append_section (menu, NULL, G_MENU_MODEL (diagnose_section));
   g_menu_append_section (menu, NULL, G_MENU_MODEL (remove_section));
 
   button = gtk_menu_button_new ();
@@ -1376,6 +1392,124 @@ ptyxis_machines_page_doctor_action (GtkWidget  *widget,
 }
 
 static void
+ptyxis_machines_page_logs_action (GtkWidget  *widget,
+                                  const char *action_name,
+                                  GVariant   *param)
+{
+  PtyxisMachinesPage *self = PTYXIS_MACHINES_PAGE (widget);
+  const char *name = param ? g_variant_get_string (param, NULL) : NULL;
+  const char *path;
+  g_auto(GStrv) argv = NULL;
+  g_autofree char *title = NULL;
+  PtyxisMachineCommandDialog *dialog;
+
+  if (!(path = nsl_path (self)))
+    return;
+
+  argv = ptyxis_machine_logs_argv (path, name);
+  if (name != NULL)
+    /* translators: %s is a machine name */
+    title = g_strdup_printf (_("Logs of %s"), name);
+  else
+    title = g_strdup (_("Logs"));
+  dialog = ptyxis_machines_page_present_command (self, title, (const char * const *)argv);
+  ptyxis_machine_command_dialog_set_messages (dialog,
+                                              _("Reading recent logs…"),
+                                              _("These are the most recent logs"),
+                                              _("Could not read the logs"));
+}
+
+static void
+ptyxis_machines_page_recover_response_cb (AdwAlertDialog *alert,
+                                          const char     *response,
+                                          gpointer        user_data)
+{
+  PtyxisMachinesPage *self = PTYXIS_MACHINES_PAGE (user_data);
+  const char *name = g_object_get_data (G_OBJECT (alert), "MACHINE_NAME");
+  const char *path;
+  g_auto(GStrv) argv = NULL;
+  g_autofree char *title = NULL;
+  g_autofree char *running = NULL;
+  g_autofree char *succeeded = NULL;
+  g_autofree char *failed = NULL;
+  PtyxisMachineCommandDialog *dialog;
+
+  if (g_strcmp0 (response, "recover") != 0 || !(path = nsl_path (self)))
+    return;
+
+  argv = ptyxis_machine_recover_argv (path, name);
+  if (name != NULL)
+    {
+      /* translators: %s is a machine name */
+      title = g_strdup_printf (_("Recovering %s"), name);
+      /* translators: %s is a machine name */
+      running = g_strdup_printf (_("Restarting the VM of %s from a fresh root. This can take a few minutes."), name);
+      /* translators: %s is a machine name */
+      succeeded = g_strdup_printf (_("%s was recovered. Its files are unchanged."), name);
+      /* translators: %s is a machine name */
+      failed = g_strdup_printf (_("Could not recover %s"), name);
+    }
+  else
+    {
+      title = g_strdup (_("Recovering the Shared VM"));
+      running = g_strdup (_("Restarting the shared VM from a fresh root. This can take a few minutes."));
+      succeeded = g_strdup (_("The shared VM was recovered. Machines are unchanged."));
+      failed = g_strdup (_("Could not recover the shared VM"));
+    }
+
+  dialog = ptyxis_machines_page_present_command (self, title, (const char * const *)argv);
+  ptyxis_machine_command_dialog_set_messages (dialog, running, succeeded, failed);
+}
+
+static void
+ptyxis_machines_page_recover_action (GtkWidget  *widget,
+                                     const char *action_name,
+                                     GVariant   *param)
+{
+  PtyxisMachinesPage *self = PTYXIS_MACHINES_PAGE (widget);
+  const char *name = param ? g_variant_get_string (param, NULL) : NULL;
+  g_autofree char *heading = NULL;
+  AdwDialog *alert;
+
+  if (nsl_path (self) == NULL)
+    return;
+
+  if (name != NULL)
+    /* translators: %s is a machine name */
+    heading = g_strdup_printf (_("Recover %s?"), name);
+  else
+    heading = g_strdup (_("Recover the Shared VM?"));
+  alert = adw_alert_dialog_new (heading, NULL);
+  if (name != NULL)
+    {
+      /* translators: %s is a machine name */
+      adw_alert_dialog_format_body (ADW_ALERT_DIALOG (alert),
+                                    _("nsl stops %s and its own VM, then starts the VM again from a fresh root. The VM runs afterwards, even if it was stopped. Programs running in %s will close. The machine, its files and keys are kept."),
+                                    name, name);
+    }
+  else
+    adw_alert_dialog_set_body (ADW_ALERT_DIALOG (alert),
+                               _("nsl stops the shared VM and every machine in it, then starts the VM again from a fresh root. The VM runs afterwards, even if it was stopped. Programs running in these machines will close. Machines, their files and keys are kept."));
+
+  adw_alert_dialog_add_responses (ADW_ALERT_DIALOG (alert),
+                                  "cancel", _("_Cancel"),
+                                  "recover", _("_Recover"),
+                                  NULL);
+  adw_alert_dialog_set_response_appearance (ADW_ALERT_DIALOG (alert), "recover", ADW_RESPONSE_DESTRUCTIVE);
+  adw_alert_dialog_set_default_response (ADW_ALERT_DIALOG (alert), "cancel");
+  adw_alert_dialog_set_close_response (ADW_ALERT_DIALOG (alert), "cancel");
+  g_object_set_data_full (G_OBJECT (alert), "MACHINE_NAME", g_strdup (name), g_free);
+
+  g_signal_connect_object (alert,
+                           "response",
+                           G_CALLBACK (ptyxis_machines_page_recover_response_cb),
+                           self,
+                           0);
+
+  adw_dialog_present (alert, GTK_WIDGET (self));
+}
+
+static void
 ptyxis_machines_page_update_action (GtkWidget  *widget,
                                     const char *action_name,
                                     GVariant   *param)
@@ -1597,6 +1731,10 @@ ptyxis_machines_page_class_init (PtyxisMachinesPageClass *klass)
   gtk_widget_class_install_action (widget_class, "machines.refresh", NULL, ptyxis_machines_page_refresh_action);
   gtk_widget_class_install_action (widget_class, "machines.rescan", NULL, ptyxis_machines_page_rescan_action);
   gtk_widget_class_install_action (widget_class, "machines.doctor", NULL, ptyxis_machines_page_doctor_action);
+  gtk_widget_class_install_action (widget_class, "machines.host-logs", NULL, ptyxis_machines_page_logs_action);
+  gtk_widget_class_install_action (widget_class, "machines.host-recover", NULL, ptyxis_machines_page_recover_action);
+  gtk_widget_class_install_action (widget_class, "machines.logs", "s", ptyxis_machines_page_logs_action);
+  gtk_widget_class_install_action (widget_class, "machines.recover", "s", ptyxis_machines_page_recover_action);
   gtk_widget_class_install_action (widget_class, "machines.update", NULL, ptyxis_machines_page_update_action);
   gtk_widget_class_install_action (widget_class, "machines.shutdown", NULL, ptyxis_machines_page_shutdown_action);
   gtk_widget_class_install_action (widget_class, "machines.install-guide", NULL, ptyxis_machines_page_install_guide_action);

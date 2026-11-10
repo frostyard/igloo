@@ -192,6 +192,62 @@ test_suggest_import_name (void)
   }
 }
 
+static void
+test_logs_argv (void)
+{
+  const char *names[] = { NULL, "dev", "name with spaces", "-leading" };
+
+  for (guint i = 0; i < G_N_ELEMENTS (names); i++)
+    {
+      g_auto(GStrv) argv = ptyxis_machine_logs_argv ("/host/bin/nsl", names[i]);
+
+      g_assert_cmpuint (g_strv_length (argv), ==, names[i] ? 3 : 2);
+      g_assert_cmpstr (argv[0], ==, "/host/bin/nsl");
+      g_assert_cmpstr (argv[1], ==, "logs");
+      g_assert_cmpstr (argv[2], ==, names[i]);
+    }
+}
+
+static void
+test_recover_argv (void)
+{
+  const char *names[] = { NULL, "dev", "name with spaces", "-leading" };
+
+  for (guint i = 0; i < G_N_ELEMENTS (names); i++)
+    {
+      g_auto(GStrv) argv = ptyxis_machine_recover_argv ("/host/bin/nsl", names[i]);
+
+      g_assert_cmpuint (g_strv_length (argv), ==, names[i] ? 3 : 2);
+      g_assert_cmpstr (argv[0], ==, "/host/bin/nsl");
+      g_assert_cmpstr (argv[1], ==, "recover");
+      g_assert_cmpstr (argv[2], ==, names[i]);
+    }
+}
+
+static void
+test_can_recover (void)
+{
+  struct {
+    const char *tier;
+    const char *state;
+    gboolean expected;
+  } cases[] = {
+    { "isolated", "running", TRUE },
+    { "isolated", "stopped", TRUE },
+    { "isolated", "starting", TRUE },
+    { "isolated", NULL, TRUE },
+    { "shared", "running", FALSE },
+    { "shared", "stopped", FALSE },
+    { "isolated", "incomplete", FALSE },
+    { "isolated", "removing", FALSE },
+    { NULL, "running", FALSE },
+    { NULL, NULL, FALSE },
+  };
+
+  for (guint i = 0; i < G_N_ELEMENTS (cases); i++)
+    g_assert_cmpint (ptyxis_machine_can_recover (cases[i].tier, cases[i].state), ==, cases[i].expected);
+}
+
 int
 main (int argc,
       char *argv[])
@@ -202,6 +258,10 @@ main (int argc,
   g_test_add_func ("/Ptyxis/MachineUtil/compose-host-path", test_compose_host_path);
   g_test_add_func ("/Ptyxis/MachineUtil/export-file-name", test_export_file_name);
   g_test_add_func ("/Ptyxis/MachineUtil/suggest-import-name", test_suggest_import_name);
+
+  g_test_add_func ("/Ptyxis/MachineUtil/logs-argv", test_logs_argv);
+  g_test_add_func ("/Ptyxis/MachineUtil/recover-argv", test_recover_argv);
+  g_test_add_func ("/Ptyxis/MachineUtil/can-recover", test_can_recover);
 
   return g_test_run ();
 }

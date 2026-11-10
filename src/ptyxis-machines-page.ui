@@ -288,6 +288,34 @@
         </child>
         <child>
           <object class="AdwActionRow">
+            <property name="title" translatable="yes">Show Logs</property>
+            <property name="subtitle" translatable="yes">Run nsl logs to show recent logs of the VMs and machine sessions</property>
+            <property name="activatable">true</property>
+            <property name="action-name">machines.host-logs</property>
+            <child type="suffix">
+              <object class="GtkImage">
+                <property name="icon-name">go-next-symbolic</property>
+                <property name="accessible-role">presentation</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Recover the Shared VM…</property>
+            <property name="subtitle" translatable="yes">Run nsl recover to restart the shared VM from a fresh root; machines are kept</property>
+            <property name="activatable">true</property>
+            <property name="action-name">machines.host-recover</property>
+            <child type="suffix">
+              <object class="GtkImage">
+                <property name="icon-name">go-next-symbolic</property>
+                <property name="accessible-role">presentation</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
             <property name="title" translatable="yes">Shut Down All Machines</property>
             <property name="subtitle" translatable="yes">Stop every running machine and nsl VM</property>
             <property name="activatable">true</property>

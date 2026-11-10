@@ -49,4 +49,11 @@ char     *ptyxis_machine_host_path_finish     (GAsyncResult       *result,
                                                GError            **error);
 char     *ptyxis_machine_dup_container_id     (const char         *name);
 
+char    **ptyxis_machine_logs_argv            (const char         *nsl,
+                                               const char         *name);
+char    **ptyxis_machine_recover_argv         (const char         *nsl,
+                                               const char         *name);
+gboolean  ptyxis_machine_can_recover          (const char         *tier,
+                                               const char         *state);
+
 G_END_DECLS
