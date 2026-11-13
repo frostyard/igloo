@@ -245,7 +245,11 @@ function scratch() {
   const make = (base) => {
     const args = ["--no-print-directory", "corrections-base"];
     if (base !== undefined) args.push(`BASE=${base}`);
-    const result = spawnSync("make", args, { cwd: root, encoding: "utf8" });
+    // `make ci BASE=<ref>` runs this test with BASE in MAKEFLAGS; a child make
+    // would take it, so the scratch make gets an environment without it.
+    const env = { ...process.env };
+    for (const name of ["MAKEFLAGS", "MFLAGS", "MAKELEVEL", "BASE"]) delete env[name];
+    const result = spawnSync("make", args, { cwd: root, encoding: "utf8", env });
     return { status: result.status, output: `${result.stdout}${result.stderr}` };
   };
   const write = (text) => writeFileSync(join(root, ".memory", "corrections.jsonl"), text);
