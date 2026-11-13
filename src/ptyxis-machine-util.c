@@ -90,9 +90,13 @@ ptyxis_machine_can_recover (const char *tier,
 gboolean
 ptyxis_machine_remove_needs_stop (const char *state)
 {
-  (void)state;
-
-  return TRUE;
+  /* nsl stop does not know a machine in removing: nsl moved its record
+   * to removing/. For an incomplete machine, nsl's way out is to retry
+   * nsl remove NAME --yes; nsl never starts an incomplete machine, and
+   * nsl remove refuses a running one.
+   */
+  return g_strcmp0 (state, "removing") != 0 &&
+         g_strcmp0 (state, "incomplete") != 0;
 }
 
 /**
