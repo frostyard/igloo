@@ -55,5 +55,9 @@ char    **ptyxis_machine_recover_argv         (const char         *nsl,
                                                const char         *name);
 gboolean  ptyxis_machine_can_recover          (const char         *tier,
                                                const char         *state);
+gboolean  ptyxis_machine_remove_needs_stop    (const char         *state);
+char    **ptyxis_machine_remove_argv          (const char         *nsl,
+                                               const char         *name,
+                                               const char         *state);
 
 G_END_DECLS

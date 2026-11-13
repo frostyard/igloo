@@ -85,7 +85,9 @@ asks the user to update.
     never replaces a file), *Show Logs* (`nsl logs NAME`), *Recover…* (for
     an isolated machine only: `nsl recover NAME`, after a confirmation) and
     *Remove…* (`nsl stop` then
-    `nsl remove --yes`, after a confirmation);
+    `nsl remove --yes`, after a confirmation; a machine in the state
+    `removing` or `incomplete` runs only `nsl remove --yes`, which resumes
+    its unfinished removal);
   - *Resources*: shared VM memory and processors, autostart, idle timeout and
     isolated VM resources, written to `nsl.conf`;
   - *Host*: `nsl doctor`, `nsl update`, `nsl logs`, `nsl recover` (after a

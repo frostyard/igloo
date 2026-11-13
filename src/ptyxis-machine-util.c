@@ -81,6 +81,58 @@ ptyxis_machine_can_recover (const char *tier,
          g_strcmp0 (state, "removing") != 0;
 }
 
+/**
+ * ptyxis_machine_remove_needs_stop:
+ * @state: (nullable): a machine state
+ *
+ * Returns: whether the machine must stop before nsl removes it
+ */
+gboolean
+ptyxis_machine_remove_needs_stop (const char *state)
+{
+  /* nsl stop does not know a machine in removing: nsl moved its record
+   * to removing/. For an incomplete machine, nsl's way out is to retry
+   * nsl remove NAME --yes; nsl never starts an incomplete machine, and
+   * nsl remove refuses a running one.
+   */
+  return g_strcmp0 (state, "removing") != 0 &&
+         g_strcmp0 (state, "incomplete") != 0;
+}
+
+/**
+ * ptyxis_machine_remove_argv:
+ * @nsl: the path to nsl
+ * @name: a machine name
+ * @state: (nullable): the state of the machine
+ *
+ * A machine in removing or incomplete is not stopped first: `nsl stop`
+ * fails for a machine in removing, and nsl directs the user to retry
+ * `nsl remove NAME --yes` for an incomplete one. That command resumes
+ * the unfinished removal, or cleans up the unfinished creation.
+ *
+ * Returns: (transfer full) (array zero-terminated=1): arguments for nsl remove
+ */
+char **
+ptyxis_machine_remove_argv (const char *nsl,
+                            const char *name,
+                            const char *state)
+{
+  /* nsl removes only stopped machines; stopping a stopped one does nothing */
+  const char * const stop_and_remove[] = {
+    "/bin/sh", "-c", "\"$0\" stop \"$1\" && exec \"$0\" remove \"$1\" --yes",
+    nsl, name, NULL
+  };
+  const char * const remove[] = { nsl, "remove", name, "--yes", NULL };
+
+  g_return_val_if_fail (nsl != NULL, NULL);
+  g_return_val_if_fail (name != NULL, NULL);
+
+  if (ptyxis_machine_remove_needs_stop (state))
+    return g_strdupv ((char **)stop_and_remove);
+
+  return g_strdupv ((char **)remove);
+}
+
 #define DOCUMENTS_BUS_NAME "org.freedesktop.portal.Documents"
 #define DOCUMENTS_OBJECT_PATH "/org/freedesktop/portal/documents"
 #define DOCUMENTS_INTERFACE "org.freedesktop.portal.Documents"
