@@ -273,7 +273,8 @@
       @settings: "section.key" to value; an empty value removes the key
 
       Writes nsl.conf, keeping its comments, and checks the result with
-      `nsl config`. The previous file is restored when nsl rejects it.
+      `nsl config`. The previous file is restored when nsl rejects the new
+      one, and when `nsl config` cannot run.
     -->
     <method name="SetConfig">
       <arg name="settings" direction="in" type="a{ss}"/>

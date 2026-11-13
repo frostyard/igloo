@@ -614,6 +614,14 @@ ptyxis_config_restore_free (PtyxisConfigRestore *restore)
   if (restore == NULL)
     return;
 
+  if (!restore->keep)
+    {
+      if (restore->existed)
+        g_file_set_contents (restore->target, restore->previous, -1, NULL);
+      else
+        g_unlink (restore->target);
+    }
+
   g_clear_pointer (&restore->target, g_free);
   g_clear_pointer (&restore->previous, g_free);
   g_free (restore);
