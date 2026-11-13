@@ -35,4 +35,17 @@ char               *ptyxis_machines_impl_apply_settings  (const char        *con
                                                           GVariant          *settings,
                                                           GError           **error);
 
+/* The write of a SetConfig call that nsl has not checked yet; freeing it
+ * without keeping it puts the previous file back.
+ */
+typedef struct _PtyxisConfigRestore PtyxisConfigRestore;
+
+PtyxisConfigRestore *ptyxis_config_restore_new  (const char          *target,
+                                                 const char          *previous,
+                                                 gboolean             existed);
+void                 ptyxis_config_restore_keep (PtyxisConfigRestore *restore);
+void                 ptyxis_config_restore_free (PtyxisConfigRestore *restore);
+
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (PtyxisConfigRestore, ptyxis_config_restore_free)
+
 G_END_DECLS

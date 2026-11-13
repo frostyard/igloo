@@ -230,6 +230,18 @@ communicate_free (Communicate *state)
   g_free (state);
 }
 
+/* A SetConfig write that nsl did not check must not stay in place: clearing
+ * the restore frees it, and that puts nsl.conf back before the reply goes
+ * out.
+ */
+static void
+return_nsl_error (GDBusMethodInvocation *invocation,
+                  const GError          *error)
+{
+  g_object_set_data (G_OBJECT (invocation), "NSL_RESTORE", NULL);
+  g_dbus_method_invocation_return_gerror (invocation, error);
+}
+
 static void
 communicate_cb (GObject      *object,
                 GAsyncResult *result,
@@ -245,7 +257,7 @@ communicate_cb (GObject      *object,
   g_assert (state != NULL);
 
   if (!g_subprocess_communicate_utf8_finish (subprocess, result, &output, &errors, &error))
-    g_dbus_method_invocation_return_gerror (g_steal_pointer (&state->invocation), error);
+    return_nsl_error (g_steal_pointer (&state->invocation), error);
   else
     state->handler (state->self, g_steal_pointer (&state->invocation), subprocess, output, errors);
 
@@ -277,7 +289,7 @@ run_nsl (PtyxisMachinesImpl    *self,
                                                                  : G_SUBPROCESS_FLAGS_STDERR_MERGE)),
                                                           &error)))
     {
-      g_dbus_method_invocation_return_gerror (invocation, error);
+      return_nsl_error (invocation, error);
       return;
     }
 
@@ -531,16 +543,77 @@ ptyxis_machines_impl_apply_settings (const char  *contents,
   return g_key_file_to_data (key_file, NULL, error);
 }
 
-typedef struct
+struct _PtyxisConfigRestore
 {
   char     *target;
   char     *previous;
   gboolean  existed;
-} Restore;
+  gboolean  keep;
+};
 
-static void
-restore_free (Restore *restore)
+/**
+ * ptyxis_config_restore_new:
+ * @target: the file that was written
+ * @previous: (nullable): the contents before the write, or %NULL when the
+ *   file did not exist
+ * @existed: whether @target existed before the write
+ *
+ * Creates the restore of 1 `SetConfig` write that nsl has not checked yet.
+ * It copies @target and @previous, so the caller keeps its own strings.
+ * Freeing the result without ptyxis_config_restore_keep() puts the previous
+ * file back.
+ *
+ * Returns: (transfer full): a new restore
+ */
+PtyxisConfigRestore *
+ptyxis_config_restore_new (const char *target,
+                           const char *previous,
+                           gboolean    existed)
 {
+  PtyxisConfigRestore *restore;
+
+  g_return_val_if_fail (target != NULL, NULL);
+
+  restore = g_new0 (PtyxisConfigRestore, 1);
+  restore->target = g_strdup (target);
+  restore->previous = g_strdup (previous);
+  restore->existed = existed;
+
+  return restore;
+}
+
+/**
+ * ptyxis_config_restore_keep:
+ * @restore: (nullable): a restore, or %NULL
+ *
+ * Keeps the file of the write: nsl accepted it. A later
+ * ptyxis_config_restore_free() then only frees @restore.
+ */
+void
+ptyxis_config_restore_keep (PtyxisConfigRestore *restore)
+{
+  if (restore == NULL)
+    return;
+
+  restore->keep = TRUE;
+}
+
+/**
+ * ptyxis_config_restore_free:
+ * @restore: (nullable): a restore, or %NULL
+ *
+ * Frees @restore. Unless it was kept with ptyxis_config_restore_keep(), this
+ * restores the file that was there before the write: @previous is written
+ * back when the file existed, and the file is removed when it did not exist.
+ * Every path that does not keep the file restores it, so a write that nsl did
+ * not check cannot stay in place.
+ */
+void
+ptyxis_config_restore_free (PtyxisConfigRestore *restore)
+{
+  if (restore == NULL)
+    return;
+
   g_clear_pointer (&restore->target, g_free);
   g_clear_pointer (&restore->previous, g_free);
   g_free (restore);
@@ -553,22 +626,22 @@ check_config_output (PtyxisIpcMachines     *machines,
                      const char            *output,
                      const char            *errors)
 {
-  Restore *restore = g_object_get_data (G_OBJECT (invocation), "NSL_RESTORE");
+  PtyxisConfigRestore *restore = g_object_get_data (G_OBJECT (invocation), "NSL_RESTORE");
   g_autofree char *message = NULL;
 
   g_assert (restore != NULL);
 
   if (g_subprocess_get_successful (subprocess))
     {
+      ptyxis_config_restore_keep (restore);
       ptyxis_ipc_machines_complete_set_config (machines, invocation);
       return;
     }
 
-  /* nsl must understand the whole file, or it refuses to start a VM */
-  if (restore->existed)
-    g_file_set_contents (restore->target, restore->previous, -1, NULL);
-  else
-    g_unlink (restore->target);
+  /* nsl must understand the whole file, or it refuses to start a VM; clearing
+   * the restore frees it, and that puts the previous file back
+   */
+  g_object_set_data (G_OBJECT (invocation), "NSL_RESTORE", NULL);
 
   message = ptyxis_nsl_error_message (output, "nsl rejected the configuration");
   g_dbus_method_invocation_return_error_literal (invocation, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, message);
@@ -588,7 +661,7 @@ ptyxis_machines_impl_handle_set_config (PtyxisIpcMachines     *machines,
   g_autofree char *contents = NULL;
   g_autofree char *dir = NULL;
   char resolved[PATH_MAX];
-  Restore *restore;
+  PtyxisConfigRestore *restore;
   gboolean existed;
 
   g_assert (PTYXIS_IS_MACHINES_IMPL (self));
@@ -635,11 +708,8 @@ ptyxis_machines_impl_handle_set_config (PtyxisIpcMachines     *machines,
   if (!g_file_set_contents (target, contents, -1, &error))
     goto failure;
 
-  restore = g_new0 (Restore, 1);
-  restore->target = g_steal_pointer (&target);
-  restore->previous = g_steal_pointer (&previous);
-  restore->existed = existed;
-  g_object_set_data_full (G_OBJECT (invocation), "NSL_RESTORE", restore, (GDestroyNotify)restore_free);
+  restore = ptyxis_config_restore_new (target, previous, existed);
+  g_object_set_data_full (G_OBJECT (invocation), "NSL_RESTORE", restore, (GDestroyNotify) ptyxis_config_restore_free);
 
   run_nsl (self, g_steal_pointer (&invocation), check_args, FALSE, check_config_output);
 

@@ -409,6 +409,87 @@ test_nsl_apply_settings_invalid (void)
   g_assert_null (result);
 }
 
+static void
+assert_file_contents (const char *path,
+                      const char *expected)
+{
+  g_autoptr(GError) error = NULL;
+  g_autofree char *contents = NULL;
+
+  g_assert_true (g_file_get_contents (path, &contents, NULL, &error));
+  g_assert_no_error (error);
+  g_assert_cmpstr (contents, ==, expected);
+}
+
+static void
+test_nsl_config_restore (void)
+{
+  g_autoptr(GError) error = NULL;
+  g_autofree char *dir = g_dir_make_tmp ("test-nsl-restore-XXXXXX", NULL);
+  g_autofree char *path = NULL;
+
+  g_assert_nonnull (dir);
+  path = g_build_filename (dir, "nsl.conf", NULL);
+
+  /* The file existed: a restore that is not kept puts it back */
+  g_assert_true (g_file_set_contents (path, "old\n", -1, &error));
+  g_assert_no_error (error);
+  g_assert_true (g_file_set_contents (path, "new\n", -1, &error));
+  g_assert_no_error (error);
+
+  {
+    g_autoptr(PtyxisConfigRestore) restore = ptyxis_config_restore_new (path, "old\n", TRUE);
+
+    /* The scope end frees it, and that puts the previous file back */
+    g_assert_nonnull (restore);
+  }
+
+  assert_file_contents (path, "old\n");
+
+  /* A kept restore leaves the new file in place */
+  g_assert_true (g_file_set_contents (path, "new\n", -1, &error));
+  g_assert_no_error (error);
+
+  {
+    g_autoptr(PtyxisConfigRestore) restore = ptyxis_config_restore_new (path, "old\n", TRUE);
+
+    g_assert_nonnull (restore);
+    ptyxis_config_restore_keep (restore);
+  }
+
+  assert_file_contents (path, "new\n");
+
+  /* The file did not exist: a restore that is not kept removes it */
+  g_assert_cmpint (g_unlink (path), ==, 0);
+  g_assert_false (g_file_test (path, G_FILE_TEST_EXISTS));
+  g_assert_true (g_file_set_contents (path, "new\n", -1, &error));
+  g_assert_no_error (error);
+
+  {
+    g_autoptr(PtyxisConfigRestore) restore = ptyxis_config_restore_new (path, NULL, FALSE);
+
+    g_assert_nonnull (restore);
+  }
+
+  g_assert_false (g_file_test (path, G_FILE_TEST_EXISTS));
+
+  /* A kept restore leaves the created file in place */
+  g_assert_true (g_file_set_contents (path, "new\n", -1, &error));
+  g_assert_no_error (error);
+
+  {
+    g_autoptr(PtyxisConfigRestore) restore = ptyxis_config_restore_new (path, NULL, FALSE);
+
+    g_assert_nonnull (restore);
+    ptyxis_config_restore_keep (restore);
+  }
+
+  assert_file_contents (path, "new\n");
+
+  g_assert_cmpint (g_unlink (path), ==, 0);
+  g_assert_cmpint (g_rmdir (dir), ==, 0);
+}
+
 int
 main (int argc,
       char *argv[])
@@ -438,6 +519,7 @@ main (int argc,
   g_test_add_func ("/Ptyxis/Nsl/guest-directory", test_nsl_guest_directory);
   g_test_add_func ("/Ptyxis/Nsl/apply-settings", test_nsl_apply_settings);
   g_test_add_func ("/Ptyxis/Nsl/apply-settings-invalid", test_nsl_apply_settings_invalid);
+  g_test_add_func ("/Ptyxis/Nsl/config-restore", test_nsl_config_restore);
   ret = g_test_run ();
 
   {
