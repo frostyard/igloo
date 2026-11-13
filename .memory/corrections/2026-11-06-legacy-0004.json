@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-06",
+  "scope": "src/ptyxis-igloo-migration.c",
+  "correction": "A startup migration that reads, changes and rewrites a shared file must hold a cross-process lock and read its inputs after it takes the lock; 2 processes started together otherwise write back a stale snapshot over settings saved in between",
+  "evidence": "frostyard/igloo#10, cross-review (openai/gpt-6.1-sol) of head 2f939a6, finding 1",
+  "promoted_to": "testsuite/test-igloo-migration.c"
+}

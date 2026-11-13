@@ -70,8 +70,8 @@ them rather than improvising, whichever agent you are. Start a new one from
 - Run `make verify` before you call any change done, and `make test` for a
   change to C, meson or UI files. CI runs `make ci`'s 3 parts as the jobs
   `verify` and `test` of `.github/workflows/ci.yml`; `make ci BASE=origin/main`
-  runs the same locally, including the check that `.memory/corrections.jsonl`
-  is append-only against the PR base.
+  runs the same locally, including the check of the records in
+  `.memory/corrections/` against the PR base.
 - `mise.toml` and `mise.lock` pin Node for `make verify` (core ADR-0043); run
   `mise install`. Change a pin only with `mise lock`, in a commit of its own.
   The GNOME SDK and flatpak-builder come from Flathub (see
@@ -85,8 +85,8 @@ same PR. Never retry a job or a test until it is green.
 **Blocker to guard.** When a review (agent cross-review, owner review, or a
 human) finds a blocking point, the PR that fixes it also adds a guard: a
 targeted test that fails without the fix (preferred), or an `AGENTS.md` rule
-when no test can catch it. The same PR appends 1 line to
-`.memory/corrections.jsonl` (`evidence`: the PR and the review;
+when no test can catch it. The same PR adds 1 record file under
+`.memory/corrections/` (`evidence`: the PR and the review;
 `promoted_to`: the test or the rule). See `.memory/README.md`.
 
 **Risk paths.** `.github/risk-paths.json` lists the risk paths, each at a level

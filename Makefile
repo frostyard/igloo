@@ -43,9 +43,10 @@ test:
 	$(FLATPAK_BUILDER) --force-clean --disable-rofiles-fuse --stop-at=ptyxis $(BUILD_DIR) $(MANIFEST)
 	$(FLATPAK) build --filesystem=$(CURDIR) $(BUILD_DIR) sh -c 'meson setup --reconfigure $(MESON_BUILD_DIR) --prefix=/app && meson compile -C $(MESON_BUILD_DIR) && meson test -C $(MESON_BUILD_DIR) --print-errorlogs'
 
-# The corrections check compares .memory/corrections.jsonl with BASE: lines
-# are append-only (only an empty promoted_to may be filled in). The contract
-# starts with the gate: a BASE that does not hold
+# The corrections check compares the record files in .memory/corrections/ with
+# BASE: no record is removed, renamed or changed, except that an empty
+# promoted_to may be filled in once. The old single file must not come back.
+# The contract starts with the gate: a BASE that does not hold
 # scripts/check-corrections.mjs had no such rule, so the comparison is skipped
 # with a notice. Every BASE after the adoption holds the script.
 #
