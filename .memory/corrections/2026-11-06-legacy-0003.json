@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-06",
+  "scope": "ci",
+  "correction": "In a container job, the checkout belongs to the runner's user; flatpak build drops root's capabilities, so meson cannot create _build until root owns the checkout (chown before make test)",
+  "evidence": "frostyard/igloo#9, CI job test at head fce8da5: PermissionError creating /__w/igloo/igloo/_build",
+  "promoted_to": "test/repository.test.mjs"
+}

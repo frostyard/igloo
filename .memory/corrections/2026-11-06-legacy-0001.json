@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-06",
+  "scope": "docs",
+  "correction": "A docs move out of README.md must carry every fact of the old text (Machines page dialogs, defaults, nsl's architecture); a shortened summary dropped user-facing details",
+  "evidence": "frostyard/igloo#9, cross-review (openai/gpt-6.1-sol) of head 499b68a, finding 1",
+  "promoted_to": "AGENTS.md"
+}

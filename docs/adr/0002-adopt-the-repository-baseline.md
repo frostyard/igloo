@@ -67,3 +67,4 @@ license file `COPYING`.
 - Shapes: [design: build and release](../design/build-and-release.md),
   [`Makefile`](../../Makefile), [`.github/risk-paths.json`](../../.github/risk-paths.json),
   [org-wide decisions](../org-adrs.md)
+- Amended in part by: [core ADR-0081](https://github.com/frostyard/core/blob/main/docs/adr/0081-store-each-correction-in-a-file-of-its-own.md)
