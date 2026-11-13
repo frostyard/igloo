@@ -42,8 +42,9 @@ Igloo adds to the agent:
 - `org.gnome.Ptyxis.Machines` (`agent/ptyxis-machines-impl.c`, interface in
   `agent/org.gnome.Ptyxis.Agent.xml`) lists machines and images, reads and
   writes `nsl.conf`, and runs short nsl commands for the Preferences page.
-  Writes keep the file's comments and are checked with `nsl config`; a file
-  nsl rejects is restored.
+  Writes keep the file's comments and are checked with `nsl config`; the
+  previous file is restored when nsl rejects the new one, and when
+  `nsl config` cannot run.
 
 The agent looks for nsl on `PATH`, then in `~/.local/bin`,
 `/home/linuxbrew/.linuxbrew/bin`, `~/.linuxbrew/bin`, `/usr/local/bin` and
