@@ -248,6 +248,61 @@ test_can_recover (void)
     g_assert_cmpint (ptyxis_machine_can_recover (cases[i].tier, cases[i].state), ==, cases[i].expected);
 }
 
+static void
+test_remove_argv (void)
+{
+  const char *names[] = { "dev", "-leading" };
+  const char *stop_states[] = { NULL, "running", "stopped", "starting", "stopping", "" };
+  const char *no_stop_states[] = { "removing", "incomplete" };
+
+  for (guint n = 0; n < G_N_ELEMENTS (names); n++)
+    {
+      for (guint i = 0; i < G_N_ELEMENTS (stop_states); i++)
+        {
+          g_auto(GStrv) argv = ptyxis_machine_remove_argv ("/host/bin/nsl", names[n], stop_states[i]);
+
+          g_assert_cmpuint (g_strv_length (argv), ==, 5);
+          g_assert_cmpstr (argv[0], ==, "/bin/sh");
+          g_assert_cmpstr (argv[1], ==, "-c");
+          g_assert_cmpstr (argv[2], ==, "\"$0\" stop \"$1\" && exec \"$0\" remove \"$1\" --yes");
+          g_assert_cmpstr (argv[3], ==, "/host/bin/nsl");
+          g_assert_cmpstr (argv[4], ==, names[n]);
+        }
+
+      for (guint i = 0; i < G_N_ELEMENTS (no_stop_states); i++)
+        {
+          g_auto(GStrv) argv = ptyxis_machine_remove_argv ("/host/bin/nsl", names[n], no_stop_states[i]);
+
+          g_assert_cmpuint (g_strv_length (argv), ==, 4);
+          g_assert_cmpstr (argv[0], ==, "/host/bin/nsl");
+          g_assert_cmpstr (argv[1], ==, "remove");
+          g_assert_cmpstr (argv[2], ==, names[n]);
+          g_assert_cmpstr (argv[3], ==, "--yes");
+        }
+    }
+}
+
+static void
+test_remove_needs_stop (void)
+{
+  struct {
+    const char *state;
+    gboolean expected;
+  } cases[] = {
+    { NULL, TRUE },
+    { "running", TRUE },
+    { "stopped", TRUE },
+    { "starting", TRUE },
+    { "stopping", TRUE },
+    { "", TRUE },
+    { "removing", FALSE },
+    { "incomplete", FALSE },
+  };
+
+  for (guint i = 0; i < G_N_ELEMENTS (cases); i++)
+    g_assert_cmpint (ptyxis_machine_remove_needs_stop (cases[i].state), ==, cases[i].expected);
+}
+
 int
 main (int argc,
       char *argv[])
@@ -262,6 +317,8 @@ main (int argc,
   g_test_add_func ("/Ptyxis/MachineUtil/logs-argv", test_logs_argv);
   g_test_add_func ("/Ptyxis/MachineUtil/recover-argv", test_recover_argv);
   g_test_add_func ("/Ptyxis/MachineUtil/can-recover", test_can_recover);
+  g_test_add_func ("/Ptyxis/MachineUtil/remove-argv", test_remove_argv);
+  g_test_add_func ("/Ptyxis/MachineUtil/remove-needs-stop", test_remove_needs_stop);
 
   return g_test_run ();
 }

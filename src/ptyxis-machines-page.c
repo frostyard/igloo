@@ -1261,32 +1261,36 @@ ptyxis_machines_page_remove_response_cb (AdwAlertDialog *alert,
 {
   PtyxisMachinesPage *self = PTYXIS_MACHINES_PAGE (user_data);
   const char *name = g_object_get_data (G_OBJECT (alert), "MACHINE_NAME");
+  g_autofree char *state = NULL;
   g_autofree char *title = NULL;
   g_autofree char *running = NULL;
   g_autofree char *succeeded = NULL;
   g_autofree char *failed = NULL;
+  g_auto(GStrv) argv = NULL;
   PtyxisMachineCommandDialog *dialog;
   const char *path;
 
   if (g_strcmp0 (response, "remove") != 0 || !(path = nsl_path (self)))
     return;
 
-  {
-    /* nsl removes only stopped machines; stopping a stopped one does nothing */
-    const char * const argv[] = {
-      "/bin/sh", "-c", "\"$0\" stop \"$1\" && exec \"$0\" remove \"$1\" --yes",
-      path, name, NULL
-    };
+  state = dup_machine_state (self, name);
+  argv = ptyxis_machine_remove_argv (path, name, state);
 
+  /* translators: %s is a machine name */
+  title = g_strdup_printf (_("Removing %s"), name);
+
+  if (ptyxis_machine_remove_needs_stop (state))
     /* translators: %s is a machine name */
-    title = g_strdup_printf (_("Removing %s"), name);
     running = g_strdup_printf (_("Stopping and removing %s…"), name);
-    succeeded = g_strdup_printf (_("%s was removed"), name);
-    failed = g_strdup_printf (_("Could not remove %s"), name);
+  else
+    /* translators: %s is a machine name */
+    running = g_strdup_printf (_("Removing %s…"), name);
 
-    dialog = ptyxis_machines_page_present_command (self, title, argv);
-    ptyxis_machine_command_dialog_set_messages (dialog, running, succeeded, failed);
-  }
+  succeeded = g_strdup_printf (_("%s was removed"), name);
+  failed = g_strdup_printf (_("Could not remove %s"), name);
+
+  dialog = ptyxis_machines_page_present_command (self, title, (const char * const *)argv);
+  ptyxis_machine_command_dialog_set_messages (dialog, running, succeeded, failed);
 }
 
 static void
