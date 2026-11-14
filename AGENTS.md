@@ -154,4 +154,9 @@ anchors valid) and add the back-links on the targets. Use relative paths.
   docs/specs in the same change.
 - Convert relative dates ("next weekend") to absolute dates in all docs.
 - The root `README.md` follows core's README spec for the kind `app`
-  (core ADR-0072); user guides, internals and release steps go in `docs/`.
+  (core ADR-0072); internals and release steps go in `docs/`.
+- The user guide is Igloo's page on frostyard.org,
+  <https://frostyard.org/docs/tools/igloo/> (core ADR-0084), and the
+  README's documentation line links it (`make verify` checks the link). A
+  change to user-visible behavior updates that page in a second PR in
+  frostyard/frostyard-org (`src/content/docs/docs/tools/igloo.md`).
