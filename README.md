@@ -16,7 +16,7 @@ settings.
 
 **Status:** pre-release. It follows Ptyxis 50; the nsl features need nsl 0.8.0 or later.
 
-**Documentation:** [docs/README.md](docs/README.md)
+**Documentation:** [Igloo guide on frostyard.org](https://frostyard.org/docs/tools/igloo/)
 
 ## What it does
 
@@ -115,6 +115,8 @@ flatpak-builder and the release.
 
 ## Where to go next
 
+- [Igloo guide](https://frostyard.org/docs/tools/igloo/): install, use,
+  update and roll back Igloo.
 - [AGENTS.md](AGENTS.md): the rules for agents and contributors.
 - [docs/README.md](docs/README.md): the decisions, designs, specs and plans.
 - [SECURITY.md](SECURITY.md): report a vulnerability privately.

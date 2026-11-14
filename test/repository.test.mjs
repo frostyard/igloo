@@ -2,6 +2,8 @@
 // install). They hold the baseline promises that the template gate does not
 // check by itself (docs/adr/0002-adopt-the-repository-baseline.md):
 //   - LICENSE stays a byte-identical copy of upstream's COPYING;
+//   - the README's documentation line links the user guide on frostyard.org,
+//     Igloo's documentation home (row B9, frostyard/core ADR-0084);
 //   - .github/risk-paths.json covers the release workflow, the manifest and
 //     the code that runs outside the Flatpak sandbox or removes machines, at
 //     L1 or L2 (the levels that get risk:high);
@@ -63,6 +65,24 @@ test("LICENSE is a byte-identical copy of COPYING", () => {
   assert.ok(
     readFileSync(join(repo, "LICENSE")).equals(readFileSync(join(repo, "COPYING"))),
     "LICENSE and COPYING differ: copy COPYING to LICENSE again",
+  );
+});
+
+test("the README's documentation line links the frostyard.org user guide", () => {
+  // Row B9 of the baseline (frostyard/core ADR-0084): a user-facing tool has 1
+  // user documentation home, and README.md links it on its documentation line.
+  // Igloo's home is its full guide on frostyard.org, not docs/README.md.
+  const guide = "https://frostyard.org/docs/tools/igloo/";
+  const lines = read("README.md")
+    .split("\n")
+    .filter((line) => line.startsWith("**Documentation:**"));
+  assert.equal(lines.length, 1, "README.md needs exactly 1 **Documentation:** line");
+  const targets = [...lines[0].matchAll(/\]\(([^)\s]+)\)|<(https?:\/\/[^>]+)>/g)].map(
+    (match) => match[1] ?? match[2],
+  );
+  assert.ok(
+    targets.includes(guide),
+    `the documentation line links ${JSON.stringify(targets)}, not the user guide ${guide}`,
   );
 });
 
