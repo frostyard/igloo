@@ -50,8 +50,11 @@ function files(relative) {
   return found;
 }
 
-// The jobs of a workflow text: each line under the top-level jobs: key splits
-// at a job id line, and a line at column 0 ends the block.
+// The jobs of a workflow text: a key at exactly 2 spaces of indent under the
+// top-level jobs: key starts a job, lines with more indent belong to the
+// current job, a comment at column 0 belongs to no job, and another line at
+// column 0 ends the block. A job is never merged into the one before it, so a
+// 2-space line that is not a block-style key or a comment throws.
 function jobs(workflow) {
   const lines = workflow.split("\n");
   const start = lines.findIndex((line) => /^jobs:\s*$/.test(line));
@@ -59,18 +62,32 @@ function jobs(workflow) {
   const found = [];
   let current = null;
   for (const line of lines.slice(start + 1)) {
-    const heading = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(line);
-    if (heading) {
+    if (line.trim() === "") {
+      if (current) current.text += `${line}\n`;
+      continue;
+    }
+    if (/^ {2}#/.test(line)) continue;
+    if (/^ {2}\S/.test(line)) {
+      const heading = /^ {2}([A-Za-z0-9_-]+):(.*)$/.exec(line);
+      if (!heading) {
+        throw new Error(
+          `the test reads only block-style jobs, and cannot read this line under jobs: ${JSON.stringify(line)}`,
+        );
+      }
+      // A trailing comment is no value; anything else is an inline value.
+      const rest = heading[2].replace(/(^|\s)#.*$/, "").trim();
+      if (rest !== "") {
+        throw new Error(
+          `the test reads only block-style jobs: job ${heading[1]} has the inline value ${JSON.stringify(rest)}`,
+        );
+      }
       current = { id: heading[1], text: "" };
       found.push(current);
-    } else if (/^#/.test(line)) {
-      // A comment at column 0 belongs to no job and ends nothing.
       continue;
-    } else if (/^\S/.test(line)) {
-      break;
-    } else if (current) {
-      current.text += `${line}\n`;
     }
+    if (/^#/.test(line)) continue;
+    if (/^\S/.test(line)) break;
+    if (current) current.text += `${line}\n`;
   }
   return found;
 }
@@ -104,6 +121,16 @@ function namedVolumeAt(jobText, target) {
     return true;
   }
   return false;
+}
+
+// The ids of the jobs that run flatpak-builder without a named volume at
+// /var/lib/flatpak. An empty list means every such job is guarded.
+function unmountedFlatpakJobs(workflowText) {
+  const action = "uses: flatpak/flatpak-github-actions/flatpak-builder@";
+  return jobs(workflowText)
+    .filter((job) => job.text.includes(action))
+    .filter((job) => !namedVolumeAt(job.text, "/var/lib/flatpak"))
+    .map((job) => job.id);
 }
 
 // A path gets risk:high only from a glob at L1 or L2, so the coverage checks
@@ -246,14 +273,14 @@ test("every flatpak-builder job keeps the Flatpak installation off overlayfs", (
   let found = 0;
   for (const path of files(".github/workflows").sort()) {
     if (!/\.ya?ml$/.test(path)) continue;
-    for (const job of jobs(read(path))) {
-      if (!job.text.includes(action)) continue;
-      found += 1;
-      assert.ok(
-        namedVolumeAt(job.text, "/var/lib/flatpak"),
-        `${path} job ${job.id}: flatpak-builder updates the runner image's Flatpak installation, and that update fails with EXDEV on an overlayfs; mount a named volume at /var/lib/flatpak in the job's container`,
-      );
-    }
+    const workflow = read(path);
+    found += jobs(workflow).filter((job) => job.text.includes(action)).length;
+    const unmounted = unmountedFlatpakJobs(workflow);
+    assert.deepEqual(
+      unmounted,
+      [],
+      `${path} ${unmounted.map((id) => `job ${id}`).join(", ")}: flatpak-builder updates the runner image's Flatpak installation, and that update fails with EXDEV on an overlayfs; mount a named volume at /var/lib/flatpak in the job's container`,
+    );
   }
   t.diagnostic(`${found} flatpak-builder job(s) checked`);
   assert.ok(found > 0, `no job in .github/workflows runs ${action.replace(/^uses: /, "")}`);
@@ -295,6 +322,37 @@ test("the job and volume helpers read a workflow's jobs, container and volumes",
   const other = workflow("    container:\n      volumes:\n        - flatpak-installation:/var/lib/flatpak\n    ");
   const publish = jobs(other).find((entry) => entry.id === "publish").text;
   assert.equal(namedVolumeAt(publish, "/var/lib/flatpak"), false);
+  // A heading may carry a trailing comment, and an inline value may not hide a
+  // job inside the one before it.
+  const commented = [
+    "jobs:",
+    "  build:",
+    "    container:",
+    "      volumes:",
+    "        - flatpak-installation:/var/lib/flatpak",
+    "    steps:",
+    "      - uses: flatpak/flatpak-github-actions/flatpak-builder@abc # v6",
+    "  unmounted: # second build",
+    "    steps:",
+    "      - uses: flatpak/flatpak-github-actions/flatpak-builder@abc # v6",
+    "",
+  ].join("\n");
+  assert.equal(
+    jobs(commented).map((entry) => entry.id).join(","),
+    "build,unmounted",
+    "a heading with a trailing comment starts its own job",
+  );
+  assert.equal(
+    namedVolumeAt(jobs(commented).find((entry) => entry.id === "unmounted").text, "/var/lib/flatpak"),
+    false,
+    "the second job mounts nothing",
+  );
+  assert.deepEqual(
+    unmountedFlatpakJobs(commented),
+    ["unmounted"],
+    "the guard must report the unmounted job, not merge it into build",
+  );
+  assert.throws(() => jobs("jobs:\n  other: { runs-on: x }\n"), /block-style jobs/);
 });
 
 // The prerequisites and recipe commands of the Makefile's ci target.

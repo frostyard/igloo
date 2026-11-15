@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-15",
+  "scope": "test/repository.test.mjs",
+  "correction": "Belief: a job heading in a workflow is always a bare \"  id:\" line. Reality: a heading can carry a trailing comment or an inline flow map; a parser that matches only the bare form merges that job into the one before it, so a guard can check the wrong job; split at every 2-space key and reject inline values",
+  "evidence": "frostyard/igloo#25 cross-review (openai/gpt-6.1-sol) of head c70de96, finding 1",
+  "promoted_to": "test/repository.test.mjs (test: the job and volume helpers read a workflow's jobs, container and volumes)"
+}
