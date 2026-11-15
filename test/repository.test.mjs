@@ -9,7 +9,9 @@
 //     L1 or L2 (the levels that get risk:high);
 //   - ci.yml runs every part of `make ci` (frostyard/core ADR-0073);
 //   - make corrections-base fails closed on a BASE it cannot read;
-//   - the CI test job gives root the checkout before flatpak build runs.
+//   - the CI test job gives root the checkout before flatpak build runs;
+//   - flatpak.yml keeps the Flatpak installation on a named volume, off the
+//     image's overlayfs.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
@@ -46,6 +48,62 @@ function files(relative) {
     else if (entry.isFile()) found.push(path);
   }
   return found;
+}
+
+// The jobs of a workflow text: each line under the top-level jobs: key splits
+// at a job id line, and a line at column 0 ends the block.
+function jobs(workflow) {
+  const lines = workflow.split("\n");
+  const start = lines.findIndex((line) => /^jobs:\s*$/.test(line));
+  if (start === -1) return [];
+  const found = [];
+  let current = null;
+  for (const line of lines.slice(start + 1)) {
+    const heading = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(line);
+    if (heading) {
+      current = { id: heading[1], text: "" };
+      found.push(current);
+    } else if (/^#/.test(line)) {
+      // A comment at column 0 belongs to no job and ends nothing.
+      continue;
+    } else if (/^\S/.test(line)) {
+      break;
+    } else if (current) {
+      current.text += `${line}\n`;
+    }
+  }
+  return found;
+}
+
+// True when the job's container: block mounts a named volume at target: an
+// entry SOURCE:TARGET or SOURCE:TARGET:OPTIONS, where SOURCE is a volume name
+// and not a host path.
+function namedVolumeAt(jobText, target) {
+  const lines = jobText.split("\n");
+  const key = lines.findIndex((line) => /^\s*container:\s*$/.test(line));
+  if (key === -1) return false;
+  const keyIndent = lines[key].match(/^\s*/)[0].length;
+  const container = [];
+  for (const line of lines.slice(key + 1)) {
+    if (line.trim() === "") continue;
+    if (line.match(/^\s*/)[0].length <= keyIndent) break;
+    container.push(line);
+  }
+  const volumes = container.findIndex((line) => /^\s*volumes:\s*$/.test(line));
+  if (volumes === -1) return false;
+  const volumesIndent = container[volumes].match(/^\s*/)[0].length;
+  for (const line of container.slice(volumes + 1)) {
+    if (line.trim() === "") continue;
+    if (line.match(/^\s*/)[0].length <= volumesIndent) break;
+    const item = /^\s*-\s*(.+?)\s*$/.exec(line);
+    if (!item) continue;
+    const parts = item[1].replace(/^["']|["']$/g, "").split(":");
+    if (parts.length < 2 || parts[1] !== target) continue;
+    const source = parts[0];
+    if (source === "" || /^[/.~$]/.test(source)) continue;
+    return true;
+  }
+  return false;
 }
 
 // A path gets risk:high only from a glob at L1 or L2, so the coverage checks
@@ -173,6 +231,70 @@ test("the coverage helper requires an L1 or L2 glob", () => {
     false,
     "no matching glob is no coverage",
   );
+});
+
+// flatpak-builder's --install-deps-from=flathub updates the runtime and SDK
+// that the runner image keeps in /var/lib/flatpak, and an update renames a
+// directory of an image layer into .removed/. On an overlayfs with redirect_dir
+// off, that rename fails with EXDEV, "Invalid cross-device link"
+// (https://docs.kernel.org/filesystems/overlayfs.html#renaming-directories),
+// and the build died there. A named volume holds a copy of that installation on
+// the host's own file system, where the rename works, so every job that runs
+// flatpak-builder mounts one.
+test("every flatpak-builder job keeps the Flatpak installation off overlayfs", (t) => {
+  const action = "uses: flatpak/flatpak-github-actions/flatpak-builder@";
+  let found = 0;
+  for (const path of files(".github/workflows").sort()) {
+    if (!/\.ya?ml$/.test(path)) continue;
+    for (const job of jobs(read(path))) {
+      if (!job.text.includes(action)) continue;
+      found += 1;
+      assert.ok(
+        namedVolumeAt(job.text, "/var/lib/flatpak"),
+        `${path} job ${job.id}: flatpak-builder updates the runner image's Flatpak installation, and that update fails with EXDEV on an overlayfs; mount a named volume at /var/lib/flatpak in the job's container`,
+      );
+    }
+  }
+  t.diagnostic(`${found} flatpak-builder job(s) checked`);
+  assert.ok(found > 0, `no job in .github/workflows runs ${action.replace(/^uses: /, "")}`);
+});
+
+test("the job and volume helpers read a workflow's jobs, container and volumes", () => {
+  const workflow = (container) =>
+    `name: x\njobs:\n  build:\n    runs-on: ubuntu-latest\n${container}    steps:\n      - uses: flatpak/flatpak-github-actions/flatpak-builder@abc # v6\n  publish:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n`;
+  const job = (volumes) =>
+    workflow(`    container:\n      image: x\n      options: --privileged\n${volumes}    `);
+  const build = (volumes) => jobs(job(volumes)).find((entry) => entry.id === "build").text;
+  assert.equal(jobs(workflow("")).length, 2, "the jobs helper must split 2 jobs");
+  assert.equal(jobs(job("")).map((entry) => entry.id).join(","), "build,publish");
+  assert.equal(
+    jobs("jobs:\n  build:\n    runs-on: ubuntu-latest\n# note\n  publish:\n    runs-on: ubuntu-latest\n")
+      .map((entry) => entry.id)
+      .join(","),
+    "build,publish",
+    "a comment line at column 0 must not end the jobs block",
+  );
+  for (const volumes of [
+    "      volumes:\n        - flatpak-installation:/var/lib/flatpak\n",
+    "      volumes:\n        - flatpak-installation:/var/lib/flatpak:rw\n",
+    '      volumes:\n        - "flatpak-installation:/var/lib/flatpak"\n',
+  ]) {
+    assert.equal(namedVolumeAt(build(volumes), "/var/lib/flatpak"), true, `must accept ${volumes}`);
+  }
+  for (const volumes of [
+    "      volumes:\n        - /srv/flatpak:/var/lib/flatpak\n",
+    "      volumes:\n        - ./flatpak:/var/lib/flatpak\n",
+    "      volumes:\n        - /var/lib/flatpak\n",
+    "      volumes:\n        - flatpak-installation:/var/lib/flatpak2\n",
+    "      volumes:\n        - flatpak-installation:/tmp\n",
+    "",
+  ]) {
+    assert.equal(namedVolumeAt(build(volumes), "/var/lib/flatpak"), false, `must refuse ${volumes}`);
+  }
+  // A volume in another job's container does not count for this one.
+  const other = workflow("    container:\n      volumes:\n        - flatpak-installation:/var/lib/flatpak\n    ");
+  const publish = jobs(other).find((entry) => entry.id === "publish").text;
+  assert.equal(namedVolumeAt(publish, "/var/lib/flatpak"), false);
 });
 
 // The prerequisites and recipe commands of the Makefile's ci target.

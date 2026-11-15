@@ -42,9 +42,24 @@ jobs:
     runs-on: ubuntu-latest
     # flatpak-builder sandboxes builds with bubblewrap, which needs a
     # privileged container.
+    #
+    # The image also has the GNOME runtime and SDK in /var/lib/flatpak.
+    # flatpak-builder --install-deps-from=flathub updates them on every
+    # build, and the action has no input to stop it. Such an update renames
+    # the old deployment, a directory of an image layer, into
+    # /var/lib/flatpak/.removed/. On an overlayfs with redirect_dir off that
+    # rename of a lower-layer directory fails with EXDEV, "Invalid
+    # cross-device link"
+    # (https://docs.kernel.org/filesystems/overlayfs.html#renaming-directories)
+    # and the build failed that way on some GitHub-hosted runners (Azure and
+    # AWS) and passed on others. A named volume gets a copy of the image's
+    # /var/lib/flatpak, with its hard links, on the host's own file system,
+    # where the rename works. The runtime stays preinstalled.
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51
       options: --privileged
+      volumes:
+        - flatpak-installation:/var/lib/flatpak
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

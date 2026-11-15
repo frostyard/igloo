@@ -53,7 +53,11 @@ flatpak install --user flathub org.gnome.Sdk//51 org.flatpak.Builder
   has `io.github.frostyard.Igloo`, the bundle's first run creates
   `~/.var/app/org.frostyard.Igloo`, and the later rebase then leaves the old
   settings in `~/.var/app/io.github.frostyard.Igloo`: back up both folders
-  first, and test on a computer without the old ID where you can.
+  first, and test on a computer without the old ID where you can. The build
+  job mounts a named volume at `/var/lib/flatpak`, so that flatpak-builder's
+  update of the image's runtime and SDK renames directories on the host's file
+  system and not on the image's overlayfs, where the rename can fail with
+  "Invalid cross-device link".
 
 ### Release
 
