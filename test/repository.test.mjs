@@ -9,7 +9,9 @@
 //     L1 or L2 (the levels that get risk:high);
 //   - ci.yml runs every part of `make ci` (frostyard/core ADR-0073);
 //   - make corrections-base fails closed on a BASE it cannot read;
-//   - the CI test job gives root the checkout before flatpak build runs.
+//   - the CI test job gives root the checkout before flatpak build runs;
+//   - flatpak.yml keeps the Flatpak installation on a named volume, off the
+//     image's overlayfs.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
@@ -46,6 +48,89 @@ function files(relative) {
     else if (entry.isFile()) found.push(path);
   }
   return found;
+}
+
+// The jobs of a workflow text: a key at exactly 2 spaces of indent under the
+// top-level jobs: key starts a job, lines with more indent belong to the
+// current job, a comment at column 0 belongs to no job, and another line at
+// column 0 ends the block. A job is never merged into the one before it, so a
+// 2-space line that is not a block-style key or a comment throws.
+function jobs(workflow) {
+  const lines = workflow.split("\n");
+  const start = lines.findIndex((line) => /^jobs:\s*$/.test(line));
+  if (start === -1) return [];
+  const found = [];
+  let current = null;
+  for (const line of lines.slice(start + 1)) {
+    if (line.trim() === "") {
+      if (current) current.text += `${line}\n`;
+      continue;
+    }
+    if (/^ {2}#/.test(line)) continue;
+    if (/^ {2}\S/.test(line)) {
+      const heading = /^ {2}([A-Za-z0-9_-]+):(.*)$/.exec(line);
+      if (!heading) {
+        throw new Error(
+          `the test reads only block-style jobs, and cannot read this line under jobs: ${JSON.stringify(line)}`,
+        );
+      }
+      // A trailing comment is no value; anything else is an inline value.
+      const rest = heading[2].replace(/(^|\s)#.*$/, "").trim();
+      if (rest !== "") {
+        throw new Error(
+          `the test reads only block-style jobs: job ${heading[1]} has the inline value ${JSON.stringify(rest)}`,
+        );
+      }
+      current = { id: heading[1], text: "" };
+      found.push(current);
+      continue;
+    }
+    if (/^#/.test(line)) continue;
+    if (/^\S/.test(line)) break;
+    if (current) current.text += `${line}\n`;
+  }
+  return found;
+}
+
+// True when the job's container: block mounts a named volume at target: an
+// entry SOURCE:TARGET or SOURCE:TARGET:OPTIONS, where SOURCE is a volume name
+// and not a host path.
+function namedVolumeAt(jobText, target) {
+  const lines = jobText.split("\n");
+  const key = lines.findIndex((line) => /^\s*container:\s*$/.test(line));
+  if (key === -1) return false;
+  const keyIndent = lines[key].match(/^\s*/)[0].length;
+  const container = [];
+  for (const line of lines.slice(key + 1)) {
+    if (line.trim() === "") continue;
+    if (line.match(/^\s*/)[0].length <= keyIndent) break;
+    container.push(line);
+  }
+  const volumes = container.findIndex((line) => /^\s*volumes:\s*$/.test(line));
+  if (volumes === -1) return false;
+  const volumesIndent = container[volumes].match(/^\s*/)[0].length;
+  for (const line of container.slice(volumes + 1)) {
+    if (line.trim() === "") continue;
+    if (line.match(/^\s*/)[0].length <= volumesIndent) break;
+    const item = /^\s*-\s*(.+?)\s*$/.exec(line);
+    if (!item) continue;
+    const parts = item[1].replace(/^["']|["']$/g, "").split(":");
+    if (parts.length < 2 || parts[1] !== target) continue;
+    const source = parts[0];
+    if (source === "" || /^[/.~$]/.test(source)) continue;
+    return true;
+  }
+  return false;
+}
+
+// The ids of the jobs that run flatpak-builder without a named volume at
+// /var/lib/flatpak. An empty list means every such job is guarded.
+function unmountedFlatpakJobs(workflowText) {
+  const action = "uses: flatpak/flatpak-github-actions/flatpak-builder@";
+  return jobs(workflowText)
+    .filter((job) => job.text.includes(action))
+    .filter((job) => !namedVolumeAt(job.text, "/var/lib/flatpak"))
+    .map((job) => job.id);
 }
 
 // A path gets risk:high only from a glob at L1 or L2, so the coverage checks
@@ -173,6 +258,101 @@ test("the coverage helper requires an L1 or L2 glob", () => {
     false,
     "no matching glob is no coverage",
   );
+});
+
+// flatpak-builder's --install-deps-from=flathub updates the runtime and SDK
+// that the runner image keeps in /var/lib/flatpak, and an update renames a
+// directory of an image layer into .removed/. On an overlayfs with redirect_dir
+// off, that rename fails with EXDEV, "Invalid cross-device link"
+// (https://docs.kernel.org/filesystems/overlayfs.html#renaming-directories),
+// and the build died there. A named volume holds a copy of that installation on
+// the host's own file system, where the rename works, so every job that runs
+// flatpak-builder mounts one.
+test("every flatpak-builder job keeps the Flatpak installation off overlayfs", (t) => {
+  const action = "uses: flatpak/flatpak-github-actions/flatpak-builder@";
+  let found = 0;
+  for (const path of files(".github/workflows").sort()) {
+    if (!/\.ya?ml$/.test(path)) continue;
+    const workflow = read(path);
+    found += jobs(workflow).filter((job) => job.text.includes(action)).length;
+    const unmounted = unmountedFlatpakJobs(workflow);
+    assert.deepEqual(
+      unmounted,
+      [],
+      `${path} ${unmounted.map((id) => `job ${id}`).join(", ")}: flatpak-builder updates the runner image's Flatpak installation, and that update fails with EXDEV on an overlayfs; mount a named volume at /var/lib/flatpak in the job's container`,
+    );
+  }
+  t.diagnostic(`${found} flatpak-builder job(s) checked`);
+  assert.ok(found > 0, `no job in .github/workflows runs ${action.replace(/^uses: /, "")}`);
+});
+
+test("the job and volume helpers read a workflow's jobs, container and volumes", () => {
+  const workflow = (container) =>
+    `name: x\njobs:\n  build:\n    runs-on: ubuntu-latest\n${container}    steps:\n      - uses: flatpak/flatpak-github-actions/flatpak-builder@abc # v6\n  publish:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n`;
+  const job = (volumes) =>
+    workflow(`    container:\n      image: x\n      options: --privileged\n${volumes}    `);
+  const build = (volumes) => jobs(job(volumes)).find((entry) => entry.id === "build").text;
+  assert.equal(jobs(workflow("")).length, 2, "the jobs helper must split 2 jobs");
+  assert.equal(jobs(job("")).map((entry) => entry.id).join(","), "build,publish");
+  assert.equal(
+    jobs("jobs:\n  build:\n    runs-on: ubuntu-latest\n# note\n  publish:\n    runs-on: ubuntu-latest\n")
+      .map((entry) => entry.id)
+      .join(","),
+    "build,publish",
+    "a comment line at column 0 must not end the jobs block",
+  );
+  for (const volumes of [
+    "      volumes:\n        - flatpak-installation:/var/lib/flatpak\n",
+    "      volumes:\n        - flatpak-installation:/var/lib/flatpak:rw\n",
+    '      volumes:\n        - "flatpak-installation:/var/lib/flatpak"\n',
+  ]) {
+    assert.equal(namedVolumeAt(build(volumes), "/var/lib/flatpak"), true, `must accept ${volumes}`);
+  }
+  for (const volumes of [
+    "      volumes:\n        - /srv/flatpak:/var/lib/flatpak\n",
+    "      volumes:\n        - ./flatpak:/var/lib/flatpak\n",
+    "      volumes:\n        - /var/lib/flatpak\n",
+    "      volumes:\n        - flatpak-installation:/var/lib/flatpak2\n",
+    "      volumes:\n        - flatpak-installation:/tmp\n",
+    "",
+  ]) {
+    assert.equal(namedVolumeAt(build(volumes), "/var/lib/flatpak"), false, `must refuse ${volumes}`);
+  }
+  // A volume in another job's container does not count for this one.
+  const other = workflow("    container:\n      volumes:\n        - flatpak-installation:/var/lib/flatpak\n    ");
+  const publish = jobs(other).find((entry) => entry.id === "publish").text;
+  assert.equal(namedVolumeAt(publish, "/var/lib/flatpak"), false);
+  // A heading may carry a trailing comment, and an inline value may not hide a
+  // job inside the one before it.
+  const commented = [
+    "jobs:",
+    "  build:",
+    "    container:",
+    "      volumes:",
+    "        - flatpak-installation:/var/lib/flatpak",
+    "    steps:",
+    "      - uses: flatpak/flatpak-github-actions/flatpak-builder@abc # v6",
+    "  unmounted: # second build",
+    "    steps:",
+    "      - uses: flatpak/flatpak-github-actions/flatpak-builder@abc # v6",
+    "",
+  ].join("\n");
+  assert.equal(
+    jobs(commented).map((entry) => entry.id).join(","),
+    "build,unmounted",
+    "a heading with a trailing comment starts its own job",
+  );
+  assert.equal(
+    namedVolumeAt(jobs(commented).find((entry) => entry.id === "unmounted").text, "/var/lib/flatpak"),
+    false,
+    "the second job mounts nothing",
+  );
+  assert.deepEqual(
+    unmountedFlatpakJobs(commented),
+    ["unmounted"],
+    "the guard must report the unmounted job, not merge it into build",
+  );
+  assert.throws(() => jobs("jobs:\n  other: { runs-on: x }\n"), /block-style jobs/);
 });
 
 // The prerequisites and recipe commands of the Makefile's ci target.
