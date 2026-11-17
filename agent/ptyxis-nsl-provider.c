@@ -51,6 +51,33 @@ enum {
 
 static guint signals[N_SIGNALS];
 
+/* What `nsl list` returned: the machines it manages and the VMs it runs */
+typedef struct
+{
+  GPtrArray *machines;
+  GPtrArray *vms;
+} PtyxisNslListResult;
+
+static void
+list_result_free (PtyxisNslListResult *result)
+{
+  g_clear_pointer (&result->machines, g_ptr_array_unref);
+  g_clear_pointer (&result->vms, g_ptr_array_unref);
+  g_free (result);
+}
+
+static PtyxisNslListResult *
+list_result_new (GPtrArray *machines,
+                 GPtrArray *vms)
+{
+  PtyxisNslListResult *result = g_new0 (PtyxisNslListResult, 1);
+
+  result->machines = machines;
+  result->vms = vms;
+
+  return result;
+}
+
 G_DEFINE_TYPE (PtyxisNslProvider, ptyxis_nsl_provider, PTYXIS_TYPE_CONTAINER_PROVIDER)
 
 static gboolean
@@ -178,6 +205,7 @@ ptyxis_nsl_provider_list_cb (GObject      *object,
   GSubprocess *subprocess = (GSubprocess *)object;
   g_autoptr(GTask) task = user_data;
   g_autoptr(GPtrArray) machines = NULL;
+  g_autoptr(GPtrArray) vms = NULL;
   g_autoptr(GError) error = NULL;
   g_autofree char *stdout_buf = NULL;
   g_autofree char *stderr_buf = NULL;
@@ -209,9 +237,17 @@ ptyxis_nsl_provider_list_cb (GObject      *object,
       return;
     }
 
+  /* The VMs come from the same document; a document without them leaves the
+   * sizes and states unknown, which only hides the disk rows.
+   */
+  if (!(vms = ptyxis_nsl_parse_vms (stdout_buf, NULL)))
+    vms = g_ptr_array_new_with_free_func ((GDestroyNotify)ptyxis_nsl_vm_free);
+
   ptyxis_nsl_provider_merge (self, machines);
 
-  g_task_return_pointer (task, g_steal_pointer (&machines), (GDestroyNotify)g_ptr_array_unref);
+  g_task_return_pointer (task,
+                         list_result_new (g_steal_pointer (&machines), g_steal_pointer (&vms)),
+                         (GDestroyNotify)list_result_free);
 }
 
 void
@@ -234,9 +270,12 @@ ptyxis_nsl_provider_list_async (PtyxisNslProvider   *self,
   if (self->nsl_path == NULL)
     {
       g_autoptr(GPtrArray) empty = g_ptr_array_new_with_free_func ((GDestroyNotify)ptyxis_nsl_machine_free);
+      g_autoptr(GPtrArray) no_vms = g_ptr_array_new_with_free_func ((GDestroyNotify)ptyxis_nsl_vm_free);
 
       ptyxis_nsl_provider_merge (self, empty);
-      g_task_return_pointer (task, g_steal_pointer (&empty), (GDestroyNotify)g_ptr_array_unref);
+      g_task_return_pointer (task,
+                             list_result_new (g_steal_pointer (&empty), g_steal_pointer (&no_vms)),
+                             (GDestroyNotify)list_result_free);
       return;
     }
 
@@ -263,15 +302,40 @@ ptyxis_nsl_provider_list_async (PtyxisNslProvider   *self,
                                        g_steal_pointer (&task));
 }
 
+/**
+ * ptyxis_nsl_provider_list_finish:
+ * @self: a #PtyxisNslProvider
+ * @result: the result of ptyxis_nsl_provider_list_async()
+ * @vms: (out) (optional) (transfer full): the VMs `nsl list` reported
+ * @error: a location for an error
+ *
+ * Returns: (transfer full) (nullable): the machines, or %NULL on error
+ */
 GPtrArray *
 ptyxis_nsl_provider_list_finish (PtyxisNslProvider  *self,
                                  GAsyncResult       *result,
+                                 GPtrArray         **vms,
                                  GError            **error)
 {
+  g_autoptr(GPtrArray) machines = NULL;
+  PtyxisNslListResult *list;
+
   g_return_val_if_fail (PTYXIS_IS_NSL_PROVIDER (self), NULL);
   g_return_val_if_fail (G_IS_TASK (result), NULL);
 
-  return g_task_propagate_pointer (G_TASK (result), error);
+  if (vms != NULL)
+    *vms = NULL;
+
+  if (!(list = g_task_propagate_pointer (G_TASK (result), error)))
+    return NULL;
+
+  if (vms != NULL)
+    *vms = g_steal_pointer (&list->vms);
+
+  machines = g_steal_pointer (&list->machines);
+  list_result_free (list);
+
+  return g_steal_pointer (&machines);
 }
 
 static void
@@ -286,7 +350,7 @@ ptyxis_nsl_provider_update_cb (GObject      *object,
   g_assert (PTYXIS_IS_NSL_PROVIDER (self));
   g_assert (G_IS_ASYNC_RESULT (result));
 
-  if (!(machines = ptyxis_nsl_provider_list_finish (self, result, &error)))
+  if (!(machines = ptyxis_nsl_provider_list_finish (self, result, NULL, &error)))
     g_debug ("Failed to list nsl machines: %s", error->message);
 
   g_signal_emit (self, signals[CHANGED], 0);

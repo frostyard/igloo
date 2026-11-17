@@ -38,6 +38,7 @@ void                     ptyxis_nsl_provider_list_async   (PtyxisNslProvider    
                                                            gpointer              user_data);
 GPtrArray               *ptyxis_nsl_provider_list_finish  (PtyxisNslProvider    *self,
                                                            GAsyncResult         *result,
+                                                           GPtrArray           **vms,
                                                            GError              **error);
 void                     ptyxis_nsl_provider_load_names   (PtyxisNslProvider    *self);
 

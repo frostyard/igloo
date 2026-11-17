@@ -50,6 +50,14 @@ machine_at (GPtrArray *machines,
   return g_ptr_array_index (machines, i);
 }
 
+static const PtyxisNslVm *
+vm_at (GPtrArray *vms,
+       guint      i)
+{
+  g_assert_cmpuint (i, <, vms->len);
+  return g_ptr_array_index (vms, i);
+}
+
 static void
 test_nsl_list (void)
 {
@@ -133,6 +141,114 @@ test_nsl_list_invalid (void)
   empty = ptyxis_nsl_parse_machines ("{\"machines\": [{\"name\": \"../x\"}, 7, {}]}", &error);
   g_assert_no_error (error);
   g_assert_cmpuint (empty->len, ==, 0);
+}
+
+static void
+test_nsl_list_vms (void)
+{
+  g_autofree char *mixed = load ("list-mixed.json");
+  g_autofree char *json = load ("list.json");
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GPtrArray) vms = NULL;
+  const PtyxisNslVm *v;
+
+  vms = ptyxis_nsl_parse_vms (mixed, &error);
+  g_assert_no_error (error);
+  g_assert_cmpuint (vms->len, ==, 2);
+
+  v = vm_at (vms, 0);
+  g_assert_cmpstr (v->name, ==, "shared");
+  g_assert_cmpstr (v->role, ==, "shared");
+  g_assert_cmpstr (v->state, ==, "running");
+  g_assert_cmpint (v->data_disk_gib, ==, 128);
+
+  /* An isolated machine has a VM of its own */
+  v = vm_at (vms, 1);
+  g_assert_cmpstr (v->name, ==, "sandbox");
+  g_assert_cmpstr (v->role, ==, "isolated");
+  g_assert_cmpstr (v->state, ==, "stopped");
+  g_assert_cmpint (v->data_disk_gib, ==, 32);
+
+  g_clear_pointer (&vms, g_ptr_array_unref);
+  g_clear_error (&error);
+
+  vms = ptyxis_nsl_parse_vms (json, &error);
+  g_assert_no_error (error);
+  g_assert_cmpuint (vms->len, ==, 1);
+
+  v = vm_at (vms, 0);
+  g_assert_cmpstr (v->name, ==, "shared");
+  g_assert_cmpstr (v->role, ==, "shared");
+  g_assert_cmpstr (v->state, ==, "stopped");
+  g_assert_cmpint (v->data_disk_gib, ==, 128);
+}
+
+static void
+test_nsl_list_vms_invalid (void)
+{
+  const char *documents[] = {
+    "",
+    "not json",
+    "[]",
+  };
+  g_autoptr(GPtrArray) empty = NULL;
+  g_autoptr(GPtrArray) vms = NULL;
+  g_autoptr(GError) error = NULL;
+  const PtyxisNslVm *v;
+
+  for (guint i = 0; i < G_N_ELEMENTS (documents); i++)
+    {
+      g_autoptr(GError) local_error = NULL;
+      g_autoptr(GPtrArray) invalid = ptyxis_nsl_parse_vms (documents[i], &local_error);
+
+      g_assert_null (invalid);
+      g_assert_nonnull (local_error);
+    }
+
+  /* A document without VMs, such as from an older nsl, is not an error */
+  empty = ptyxis_nsl_parse_vms ("{\"machines\": []}", &error);
+  g_assert_no_error (error);
+  g_assert_nonnull (empty);
+  g_assert_cmpuint (empty->len, ==, 0);
+
+  /* Rows with invalid names are skipped; a size nsl did not report, or one
+   * outside 1 to 4096 GiB, is 0
+   */
+  vms = ptyxis_nsl_parse_vms ("{\"vms\": [7, {},"
+                              " {\"name\": \"Bad\", \"data_disk_gib\": 64},"
+                              " {\"name\": \"unknown\", \"role\": \"shared\", \"state\": \"stopped\"},"
+                              " {\"name\": \"text\", \"data_disk_gib\": \"64\"},"
+                              " {\"name\": \"zero\", \"data_disk_gib\": 0},"
+                              " {\"name\": \"huge\", \"data_disk_gib\": 5000},"
+                              " {\"name\": \"big\", \"data_disk_gib\": 4096}]}",
+                              &error);
+  g_assert_no_error (error);
+  g_assert_cmpuint (vms->len, ==, 5);
+
+  v = vm_at (vms, 0);
+  g_assert_cmpstr (v->name, ==, "unknown");
+  g_assert_cmpstr (v->role, ==, "shared");
+  g_assert_cmpstr (v->state, ==, "stopped");
+  g_assert_cmpint (v->data_disk_gib, ==, 0);
+
+  v = vm_at (vms, 1);
+  g_assert_cmpstr (v->name, ==, "text");
+  g_assert_cmpint (v->data_disk_gib, ==, 0);
+
+  v = vm_at (vms, 2);
+  g_assert_cmpstr (v->name, ==, "zero");
+  g_assert_cmpint (v->data_disk_gib, ==, 0);
+
+  v = vm_at (vms, 3);
+  g_assert_cmpstr (v->name, ==, "huge");
+  g_assert_cmpint (v->data_disk_gib, ==, 0);
+
+  /* A VM without a role or state has neither */
+  v = vm_at (vms, 4);
+  g_assert_cmpstr (v->name, ==, "big");
+  g_assert_null (v->role);
+  g_assert_null (v->state);
+  g_assert_cmpint (v->data_disk_gib, ==, 4096);
 }
 
 static void
@@ -509,6 +625,8 @@ main (int argc,
   g_test_add_func ("/Ptyxis/Nsl/list", test_nsl_list);
   g_test_add_func ("/Ptyxis/Nsl/list-mixed", test_nsl_list_mixed);
   g_test_add_func ("/Ptyxis/Nsl/list-invalid", test_nsl_list_invalid);
+  g_test_add_func ("/Ptyxis/Nsl/list-vms", test_nsl_list_vms);
+  g_test_add_func ("/Ptyxis/Nsl/list-vms-invalid", test_nsl_list_vms_invalid);
   g_test_add_func ("/Ptyxis/Nsl/images", test_nsl_images);
   g_test_add_func ("/Ptyxis/Nsl/config", test_nsl_config);
   g_test_add_func ("/Ptyxis/Nsl/config-file", test_nsl_config_file);

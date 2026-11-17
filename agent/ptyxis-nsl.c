@@ -44,6 +44,15 @@ ptyxis_nsl_machine_free (PtyxisNslMachine *machine)
 }
 
 void
+ptyxis_nsl_vm_free (PtyxisNslVm *vm)
+{
+  g_clear_pointer (&vm->name, g_free);
+  g_clear_pointer (&vm->role, g_free);
+  g_clear_pointer (&vm->state, g_free);
+  g_free (vm);
+}
+
+void
 ptyxis_nsl_image_free (PtyxisNslImage *image)
 {
   g_clear_pointer (&image->selectors, g_strfreev);
@@ -232,6 +241,77 @@ ptyxis_nsl_parse_machines (const char  *json,
     }
 
   return g_steal_pointer (&machines);
+}
+
+/**
+ * ptyxis_nsl_parse_vms:
+ * @json: the output of `nsl list --json`
+ *
+ * Reads the VMs of the document, which `nsl list` reports beside the
+ * machines. A document with no "vms" array gives no VMs rather than an
+ * error, so that the machines still list; Igloo then shows no disk sizes.
+ *
+ * Returns: (transfer full) (nullable): the VMs, or %NULL on error
+ */
+GPtrArray *
+ptyxis_nsl_parse_vms (const char  *json,
+                      GError     **error)
+{
+  g_autoptr(JsonParser) parser = json_parser_new ();
+  g_autoptr(GPtrArray) vms = NULL;
+  JsonNode *root;
+  JsonObject *object;
+  JsonArray *array;
+
+  if (json == NULL)
+    json = "";
+
+  if (!json_parser_load_from_data (parser, json, -1, error))
+    return NULL;
+
+  if (!(root = json_parser_get_root (parser)) ||
+      !JSON_NODE_HOLDS_OBJECT (root) ||
+      !(object = json_node_get_object (root)))
+    {
+      g_set_error (error,
+                   G_IO_ERROR,
+                   G_IO_ERROR_INVALID_DATA,
+                   "nsl reported no VMs");
+      return NULL;
+    }
+
+  vms = g_ptr_array_new_with_free_func ((GDestroyNotify)ptyxis_nsl_vm_free);
+
+  if (!(array = member_array (object, "vms")))
+    return g_steal_pointer (&vms);
+
+  for (guint i = 0; i < json_array_get_length (array); i++)
+    {
+      JsonObject *entry = array_object (array, i);
+      const char *name = member_string (entry, "name");
+      gint64 data_disk_gib = 0;
+      PtyxisNslVm *vm;
+
+      if (!ptyxis_nsl_is_valid_name (name))
+        continue;
+
+      /* nsl grows a data disk from 1 to 4096 GiB; anything else is not a
+       * size Igloo can show or change.
+       */
+      if (!member_int (entry, "data_disk_gib", &data_disk_gib) ||
+          data_disk_gib < 1 || data_disk_gib > 4096)
+        data_disk_gib = 0;
+
+      vm = g_new0 (PtyxisNslVm, 1);
+      vm->name = g_strdup (name);
+      vm->role = g_strdup (member_string (entry, "role"));
+      vm->state = g_strdup (member_string (entry, "state"));
+      vm->data_disk_gib = data_disk_gib;
+
+      g_ptr_array_add (vms, vm);
+    }
+
+  return g_steal_pointer (&vms);
 }
 
 /**

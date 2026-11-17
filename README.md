@@ -28,7 +28,8 @@ settings.
   their machine.
 - **Manages machines.** *Main menu → Machines* creates, imports, starts,
   stops, exports and removes machines, shows their logs, recovers a stuck
-  VM, and edits a profile for each.
+  VM, grows a VM's data disk (shared or isolated), and edits a profile for
+  each.
   Long nsl commands run in a terminal, so downloads and verification are
   visible.
 - **Sets nsl's resources.** Shared VM memory and processors, autostart and

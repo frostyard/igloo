@@ -236,11 +236,14 @@
     <!--
       List:
 
-      Machines from the JSON output of `nsl list`. Each dictionary contains
-      "name" (s), "state" (s), "image" (s), "tier" (s) and "default" (b).
+      Machines and VMs from the JSON output of `nsl list`. Each machine
+      dictionary contains "name" (s), "state" (s), "image" (s), "tier" (s)
+      and "default" (b). Each VM dictionary contains "name" (s), "role" (s),
+      "state" (s) and, when nsl reports it, "data_disk_gib" (x).
     -->
     <method name="List">
       <arg name="machines" direction="out" type="aa{sv}"/>
+      <arg name="vms" direction="out" type="aa{sv}"/>
     </method>
 
     <!--
