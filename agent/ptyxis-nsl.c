@@ -202,6 +202,122 @@ ptyxis_nsl_is_valid_name (const char *name)
   return TRUE;
 }
 
+/* nsl runs a VM as the transient user unit
+ * nsl-<owner uid>-vm-<32 hex ID>.service (nsl vm.go). Its ports and desktop
+ * forwarders are other units of the same VM, and must not count.
+ */
+static gboolean
+is_vm_unit_name (const char *name)
+{
+  const char *p = name;
+  const char *start;
+
+  if (!g_str_has_prefix (p, "nsl-"))
+    return FALSE;
+
+  p += strlen ("nsl-");
+  start = p;
+
+  while (g_ascii_isdigit (*p))
+    p++;
+
+  if (p == start || !g_str_has_prefix (p, "-vm-"))
+    return FALSE;
+
+  p += strlen ("-vm-");
+  start = p;
+
+  while (g_ascii_islower (*p) || g_ascii_isdigit (*p))
+    p++;
+
+  if (p == start)
+    return FALSE;
+
+  return g_strcmp0 (p, ".service") == 0;
+}
+
+/* systemd escapes every character outside [A-Za-z0-9] of a unit name to
+ * "_XX" in its object path, so "-" reads "_2d".
+ */
+static char *
+unescape_unit_path (const char *escaped)
+{
+  GString *out = g_string_sized_new (strlen (escaped));
+
+  for (const char *p = escaped; *p; p++)
+    {
+      if (p[0] == '_' && g_ascii_isxdigit (p[1]) && g_ascii_isxdigit (p[2]))
+        {
+          char hex[3] = { p[1], p[2], 0 };
+
+          g_string_append_c (out, (char)(strtoul (hex, NULL, 16) & 0xff));
+          p += 2;
+        }
+      else
+        {
+          g_string_append_c (out, *p);
+        }
+    }
+
+  return g_string_free (out, FALSE);
+}
+
+/**
+ * ptyxis_nsl_is_vm_unit_path:
+ * @object_path: (nullable): the object path of a unit on the session bus
+ *
+ * A VM runs as the transient user unit nsl-UID-vm-ID.service, which systemd
+ * exports at /org/freedesktop/systemd1/unit/ with the name escaped.
+ *
+ * Returns: whether @object_path is the unit of an nsl VM
+ */
+gboolean
+ptyxis_nsl_is_vm_unit_path (const char *object_path)
+{
+  g_autofree char *name = NULL;
+  const char *escaped;
+
+  if (object_path == NULL ||
+      !g_str_has_prefix (object_path, PTYXIS_NSL_SYSTEMD_UNIT_PREFIX))
+    return FALSE;
+
+  escaped = object_path + strlen (PTYXIS_NSL_SYSTEMD_UNIT_PREFIX);
+
+  /* 1 unit name, not a path below it */
+  if (escaped[0] == 0 || strchr (escaped, '/') != NULL)
+    return FALSE;
+
+  name = unescape_unit_path (escaped);
+
+  return is_vm_unit_name (name);
+}
+
+/**
+ * ptyxis_nsl_vm_unit_stopped:
+ * @previous_state: (nullable): the ActiveState this watcher saw last
+ * @active_state: (nullable): the ActiveState systemd reports now
+ *
+ * A VM that stops reports "inactive", and a VM that fails reports "failed".
+ * A unit that systemd loaded only to answer a query, such as nsl's own
+ * `systemctl show`, reports "inactive" with no state before it; that is not a
+ * stop, and treating it as one would make every list trigger another.
+ *
+ * Returns: whether a VM stopped between @previous_state and @active_state
+ */
+gboolean
+ptyxis_nsl_vm_unit_stopped (const char *previous_state,
+                            const char *active_state)
+{
+  if (g_strcmp0 (active_state, "inactive") != 0 &&
+      g_strcmp0 (active_state, "failed") != 0)
+    return FALSE;
+
+  return g_strcmp0 (previous_state, "active") == 0 ||
+         g_strcmp0 (previous_state, "activating") == 0 ||
+         g_strcmp0 (previous_state, "deactivating") == 0 ||
+         g_strcmp0 (previous_state, "reloading") == 0;
+}
+
 /**
  * ptyxis_nsl_parse_machines:
  * @json: the output of `nsl list --json`

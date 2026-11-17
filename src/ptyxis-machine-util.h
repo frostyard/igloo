@@ -29,6 +29,14 @@ G_BEGIN_DECLS
 /* The largest data disk nsl grows a VM to */
 #define PTYXIS_MACHINE_MAX_DISK_GIB 4096
 
+/* Numbers the requests a page runs, so that the answers to all but the newest
+ * one are ignored. A zeroed struct has no current request.
+ */
+typedef struct
+{
+  guint generation;
+} PtyxisMachineRequests;
+
 gboolean  ptyxis_machine_is_valid_name        (const char         *name);
 gboolean  ptyxis_machine_is_valid_user        (const char         *user);
 char     *ptyxis_machine_describe_image       (const char         *build);
@@ -75,5 +83,9 @@ char    **ptyxis_machine_vm_stop_args         (const char         *name);
 char    **ptyxis_machine_resize_argv          (const char         *nsl,
                                                const char         *name,
                                                gint64              gib);
+
+guint     ptyxis_machine_requests_begin       (PtyxisMachineRequests *self);
+gboolean  ptyxis_machine_requests_is_current  (const PtyxisMachineRequests *self,
+                                               guint                        generation);
 
 G_END_DECLS

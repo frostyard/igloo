@@ -27,6 +27,9 @@ G_BEGIN_DECLS
 /* Machines see shared host trees under this prefix. */
 #define PTYXIS_NSL_HOST_PREFIX "/mnt/host"
 
+/* Where systemd exports its units on the session bus */
+#define PTYXIS_NSL_SYSTEMD_UNIT_PREFIX "/org/freedesktop/systemd1/unit/"
+
 typedef struct _PtyxisNslMachine
 {
   char     *name;
@@ -70,6 +73,9 @@ void       ptyxis_nsl_setting_free         (PtyxisNslSetting  *setting);
 char      *ptyxis_nsl_find_program         (void);
 char      *ptyxis_nsl_dup_home             (void);
 gboolean   ptyxis_nsl_is_valid_name        (const char        *name);
+gboolean   ptyxis_nsl_is_vm_unit_path      (const char        *object_path);
+gboolean   ptyxis_nsl_vm_unit_stopped      (const char        *previous_state,
+                                            const char        *active_state);
 GPtrArray *ptyxis_nsl_parse_machines       (const char        *json,
                                             GError           **error);
 GPtrArray *ptyxis_nsl_parse_vms            (const char        *json,

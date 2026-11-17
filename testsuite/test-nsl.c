@@ -384,6 +384,65 @@ test_nsl_names (void)
 }
 
 static void
+test_nsl_vm_unit_path (void)
+{
+  /* systemd escapes "-" of a unit name to "_2d" and "." of its type to
+   * "_2e" in the object path
+   */
+  const char *vm_units[] = {
+    "/org/freedesktop/systemd1/unit/nsl_2d1000_2dvm_2d0123abcd_2eservice",
+    "/org/freedesktop/systemd1/unit/nsl_2d0_2dvm_2dff_2eservice",
+  };
+  const char *other_paths[] = {
+    /* The ports and desktop forwarders of the same VM */
+    "/org/freedesktop/systemd1/unit/nsl_2d1000_2dvm_2d0123abcd_2dports_2eservice",
+    "/org/freedesktop/systemd1/unit/nsl_2d1000_2dvm_2d0123abcd_2ddesktop_2dx_2eservice",
+    /* Other units, other services, a path below a unit */
+    "/org/freedesktop/systemd1/unit/graphical_2esession_2etarget",
+    "/org/freedesktop/systemd1/unit/nsl_2d1000_2dvm_2d0123abcd_2esocket",
+    "/org/freedesktop/systemd1/unit/",
+    "/org/freedesktop/systemd1",
+    "/org/freedesktop/systemd1/unit/nsl_2d1000_2dvm_2d0123abcd_2eservice/x",
+    "nsl_2d1000_2dvm_2d0123abcd_2eservice",
+    "",
+  };
+
+  for (guint i = 0; i < G_N_ELEMENTS (vm_units); i++)
+    g_assert_true (ptyxis_nsl_is_vm_unit_path (vm_units[i]));
+
+  for (guint i = 0; i < G_N_ELEMENTS (other_paths); i++)
+    g_assert_false (ptyxis_nsl_is_vm_unit_path (other_paths[i]));
+
+  g_assert_false (ptyxis_nsl_is_vm_unit_path (NULL));
+}
+
+static void
+test_nsl_vm_unit_stopped (void)
+{
+  struct {
+    const char *previous;
+    const char *active;
+    gboolean    expected;
+  } cases[] = {
+    { "deactivating", "inactive", TRUE },
+    { "active", "failed", TRUE },
+    { "activating", "inactive", TRUE },
+    { "reloading", "inactive", TRUE },
+    /* A unit loaded only to answer a query was never running */
+    { NULL, "inactive", FALSE },
+    { NULL, "failed", FALSE },
+    /* Nothing stopped */
+    { "inactive", "inactive", FALSE },
+    { "active", "active", FALSE },
+    { "activating", "active", FALSE },
+    { "active", "deactivating", FALSE },
+  };
+
+  for (guint i = 0; i < G_N_ELEMENTS (cases); i++)
+    g_assert_cmpint (ptyxis_nsl_vm_unit_stopped (cases[i].previous, cases[i].active), ==, cases[i].expected);
+}
+
+static void
 test_nsl_translate_uri (void)
 {
   struct {
@@ -632,6 +691,8 @@ main (int argc,
   g_test_add_func ("/Ptyxis/Nsl/config-file", test_nsl_config_file);
   g_test_add_func ("/Ptyxis/Nsl/error-message", test_nsl_error_message);
   g_test_add_func ("/Ptyxis/Nsl/names", test_nsl_names);
+  g_test_add_func ("/Ptyxis/Nsl/vm-unit-path", test_nsl_vm_unit_path);
+  g_test_add_func ("/Ptyxis/Nsl/vm-unit-stopped", test_nsl_vm_unit_stopped);
   g_test_add_func ("/Ptyxis/Nsl/translate-uri", test_nsl_translate_uri);
   g_test_add_func ("/Ptyxis/Nsl/translate-directory", test_nsl_translate_directory);
   g_test_add_func ("/Ptyxis/Nsl/guest-directory", test_nsl_guest_directory);

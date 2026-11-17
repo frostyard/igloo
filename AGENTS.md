@@ -28,6 +28,10 @@ them rather than improvising, whichever agent you are. Start a new one from
   cleanly. Rename only what users see. The meson option `generic` names the
   application; its default `igloo` sets the application and GSettings IDs to
   `org.frostyard.Igloo` (`meson.build`).
+- **Floating references.** `gtk_adjustment_new()` and other
+  `GInitiallyUnowned` constructors return a floating reference that the widget
+  sinks: pass it straight to the widget, and never hold it in `g_autoptr`
+  unless you call `g_object_ref_sink()` first.
 - **The previous ID stays handled.** Before the rename, the ID was
   `io.github.frostyard.Igloo` ([ADR-0003](docs/adr/0003-rename-the-application-id.md)).
   Keep `src/ptyxis-igloo-migration.c` (called first in `main()`), the
@@ -57,9 +61,10 @@ them rather than improvising, whichever agent you are. Start a new one from
   (0.8.0) in `README.md` true.
 - **Never poll nsl.** An `nsl list` against a running VM counts as activity
   and keeps the VM from idling. `agent/ptyxis-nsl-provider.c` reloads at
-  startup, when nsl's files change, after a Machines page command or a
-  rescan (*Check Again*), and twice (after 5 s and 20 s) after a terminal
-  starts a machine; never on a repeating timer.
+  startup, when nsl's files change, when systemd reports that an nsl VM unit
+  stopped, after a Machines page command or a rescan (*Check Again*), and
+  twice (after 5 s and 20 s) after a terminal starts a machine; never on a
+  repeating timer.
 - **Moving docs keeps every fact.** When text moves out of `README.md` or
   between docs, each fact of the old text lands in its new place, or the PR
   says why it is dropped. Compare the old text sentence by sentence before

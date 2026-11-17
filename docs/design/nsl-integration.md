@@ -29,8 +29,10 @@ Igloo adds to the agent:
   `nsl:NAME`, for every machine `nsl list --json` reports, except incomplete
   machines and machines being removed. It reads machine names from
   `NSL_HOME/machines` at startup, so restored sessions find their machines
-  before `nsl list` finishes. It reloads when nsl changes its records, its
-  default machine or a VM's runtime directory, and shortly after a terminal
+  before `nsl list` finishes. It reloads when nsl changes its records or its
+  default machine, when systemd reports that an nsl VM unit stopped (a VM's
+  runtime directory appears on its first start and stays, so nsl removes no
+  file to watch when an isolated VM powers off), and shortly after a terminal
   starts a machine. It never polls: an `nsl list` against a running VM counts
   as activity and would keep the VM from idling.
 - `PtyxisNslContainer` (`agent/ptyxis-nsl-container.c`) spawns terminals with
@@ -107,8 +109,9 @@ menu, but the Machines page asks the user to update.
   disk of a stopped VM. When the VM runs, Igloo runs `nsl shutdown` after the
   confirmation for the shared VM, which stops every machine and every VM, or
   `nsl stop NAME` for an isolated machine, and then waits without polling
-  until the list shows the VM stopped: at most 150 s, because nsl powers an
-  isolated VM off about a minute after its machine stops. The growth itself
+  until systemd reports that the VM's unit stopped and the list shows the VM
+  stopped: at most 150 s, because nsl powers an isolated VM off about a minute
+  after its machine stops. The growth itself
   runs `nsl resize [NAME] --disk GiB` in a terminal as an argument array.
   After an interrupted growth, nsl accepts only the pending size (or
   `nsl recover`); it refuses another size and says so in the terminal. The

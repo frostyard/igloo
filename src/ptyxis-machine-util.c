@@ -280,6 +280,45 @@ ptyxis_machine_resize_argv (const char *nsl,
   }
 }
 
+/**
+ * ptyxis_machine_requests_begin:
+ * @self: a #PtyxisMachineRequests
+ *
+ * Starts a request. Its generation is newer than every generation before it,
+ * so answers to older requests are no longer current.
+ *
+ * Returns: the generation of this request
+ */
+guint
+ptyxis_machine_requests_begin (PtyxisMachineRequests *self)
+{
+  g_return_val_if_fail (self != NULL, 0);
+
+  ++self->generation;
+
+  /* 0 means no request ever began, so a wrapped counter must not become it */
+  if (self->generation == 0)
+    self->generation = 1;
+
+  return self->generation;
+}
+
+/**
+ * ptyxis_machine_requests_is_current:
+ * @self: a #PtyxisMachineRequests
+ * @generation: a generation an answer belongs to
+ *
+ * Returns: whether @generation is the newest request, and not 0
+ */
+gboolean
+ptyxis_machine_requests_is_current (const PtyxisMachineRequests *self,
+                                    guint                        generation)
+{
+  g_return_val_if_fail (self != NULL, FALSE);
+
+  return generation != 0 && self->generation == generation;
+}
+
 #define DOCUMENTS_BUS_NAME "org.freedesktop.portal.Documents"
 #define DOCUMENTS_OBJECT_PATH "/org/freedesktop/portal/documents"
 #define DOCUMENTS_INTERFACE "org.freedesktop.portal.Documents"

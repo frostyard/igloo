@@ -493,6 +493,28 @@ test_suggest_disk_size (void)
     g_assert_cmpint (ptyxis_machine_suggest_disk_size (cases[i].current), ==, cases[i].expected);
 }
 
+static void
+test_requests (void)
+{
+  PtyxisMachineRequests requests = { 0 };
+  guint first;
+  guint second;
+
+  /* 0 means no request ever began */
+  g_assert_false (ptyxis_machine_requests_is_current (&requests, 0));
+
+  first = ptyxis_machine_requests_begin (&requests);
+  g_assert_cmpuint (first, >, 0);
+  g_assert_true (ptyxis_machine_requests_is_current (&requests, first));
+
+  /* A second request replaces the first: only its answers count */
+  second = ptyxis_machine_requests_begin (&requests);
+  g_assert_cmpuint (second, >, first);
+  g_assert_true (ptyxis_machine_requests_is_current (&requests, second));
+  g_assert_false (ptyxis_machine_requests_is_current (&requests, first));
+  g_assert_false (ptyxis_machine_requests_is_current (&requests, 0));
+}
+
 int
 main (int argc,
       char *argv[])
@@ -517,6 +539,7 @@ main (int argc,
   g_test_add_func ("/Ptyxis/MachineUtil/disk-can-grow", test_disk_can_grow);
   g_test_add_func ("/Ptyxis/MachineUtil/is-valid-disk-size", test_is_valid_disk_size);
   g_test_add_func ("/Ptyxis/MachineUtil/suggest-disk-size", test_suggest_disk_size);
+  g_test_add_func ("/Ptyxis/MachineUtil/requests", test_requests);
 
   return g_test_run ();
 }

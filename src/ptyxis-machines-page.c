@@ -52,6 +52,8 @@ struct _PtyxisMachinesPage
   guint                resize_timeout;
   char                *resize_name;
   gint64               resize_gib;
+  guint                resize_generation;
+  PtyxisMachineRequests requests;
 
   AdwPreferencesGroup *missing_group;
   AdwPreferencesGroup *machines_group;
@@ -1657,6 +1659,7 @@ ptyxis_machines_page_end_resize_wait (PtyxisMachinesPage *self)
   g_clear_handle_id (&self->resize_timeout, g_source_remove);
   g_clear_pointer (&self->resize_name, g_free);
   self->resize_gib = 0;
+  self->resize_generation = 0;
 
   ptyxis_machines_page_set_busy (self, FALSE);
 }
@@ -1707,12 +1710,18 @@ static gboolean
 ptyxis_machines_page_resize_timeout_cb (gpointer user_data)
 {
   PtyxisMachinesPage *self = PTYXIS_MACHINES_PAGE (user_data);
-  g_autofree char *name = g_steal_pointer (&self->resize_name);
+  g_autofree char *name = NULL;
   g_autofree char *body = NULL;
 
   g_assert (PTYXIS_IS_MACHINES_PAGE (self));
 
   self->resize_timeout = 0;
+
+  /* A newer request owns the wait now; its timeout is another source */
+  if (!ptyxis_machine_requests_is_current (&self->requests, self->resize_generation))
+    return G_SOURCE_REMOVE;
+
+  name = g_steal_pointer (&self->resize_name);
 
   if (name != NULL)
     /* translators: %s is a machine name */
@@ -1732,7 +1741,8 @@ ptyxis_machines_page_resize_timeout_cb (gpointer user_data)
 static void
 ptyxis_machines_page_start_resize_wait (PtyxisMachinesPage *self,
                                         const char         *name,
-                                        gint64              gib)
+                                        gint64              gib,
+                                        guint               generation)
 {
   g_assert (PTYXIS_IS_MACHINES_PAGE (self));
 
@@ -1742,6 +1752,7 @@ ptyxis_machines_page_start_resize_wait (PtyxisMachinesPage *self,
   self->resize_pending = TRUE;
   self->resize_name = g_strdup (name);
   self->resize_gib = gib;
+  self->resize_generation = generation;
   self->resize_timeout = g_timeout_add_seconds (RESIZE_WAIT_SECONDS,
                                                ptyxis_machines_page_resize_timeout_cb,
                                                self);
@@ -1760,7 +1771,8 @@ ptyxis_machines_page_check_pending_resize (PtyxisMachinesPage *self)
 
   g_assert (PTYXIS_IS_MACHINES_PAGE (self));
 
-  if (!self->resize_pending)
+  if (!self->resize_pending ||
+      !ptyxis_machine_requests_is_current (&self->requests, self->resize_generation))
     return;
 
   /* NULL is the shared VM, for the list and for nsl resize alike */
@@ -1788,6 +1800,7 @@ typedef struct
   PtyxisMachinesPage *self;
   char               *name;
   gint64              gib;
+  guint               generation;
 } ResizeState;
 
 static void
@@ -1822,6 +1835,13 @@ ptyxis_machines_page_resize_stop_cb (GObject      *object,
 
   ptyxis_machines_page_set_busy (self, FALSE);
 
+  /* A newer request replaced this one: its answer says nothing about it */
+  if (!ptyxis_machine_requests_is_current (&self->requests, state->generation))
+    {
+      resize_state_free (state);
+      return;
+    }
+
   if (error != NULL)
     {
       g_dbus_error_strip_remote_error (error);
@@ -1834,7 +1854,7 @@ ptyxis_machines_page_resize_stop_cb (GObject      *object,
     }
   else
     {
-      ptyxis_machines_page_start_resize_wait (self, state->name, state->gib);
+      ptyxis_machines_page_start_resize_wait (self, state->name, state->gib, state->generation);
     }
 
   resize_state_free (state);
@@ -1846,7 +1866,8 @@ ptyxis_machines_page_resize_stop_cb (GObject      *object,
 static void
 ptyxis_machines_page_stop_for_resize (PtyxisMachinesPage *self,
                                       const char         *name,
-                                      gint64              gib)
+                                      gint64              gib,
+                                      guint               generation)
 {
   g_auto(GStrv) args = NULL;
   ResizeState *state;
@@ -1860,6 +1881,7 @@ ptyxis_machines_page_stop_for_resize (PtyxisMachinesPage *self,
   state->self = g_object_ref (self);
   state->name = g_strdup (name);
   state->gib = gib;
+  state->generation = generation;
 
   ptyxis_machines_page_set_busy (self, TRUE);
   ptyxis_ipc_machines_call_run (self->proxy,
@@ -1880,6 +1902,7 @@ ptyxis_machines_page_resize_response_cb (AdwAlertDialog *alert,
   gint64 current = GPOINTER_TO_INT (g_object_get_data (G_OBJECT (alert), "RESIZE_GIB"));
   gboolean needs_stop = GPOINTER_TO_INT (g_object_get_data (G_OBJECT (alert), "RESIZE_NEEDS_STOP"));
   gint64 target;
+  guint generation;
 
   g_assert (PTYXIS_IS_MACHINES_PAGE (self));
 
@@ -1892,10 +1915,17 @@ ptyxis_machines_page_resize_response_cb (AdwAlertDialog *alert,
   if (!ptyxis_machine_is_valid_disk_size (current, target))
     return;
 
+  /* Every accepted request replaces the one before it: end its wait, and let
+   * the answers of the commands it started fall away.
+   */
+  ptyxis_machines_page_end_resize_wait (self);
+
+  generation = ptyxis_machine_requests_begin (&self->requests);
+
   if (!needs_stop)
     ptyxis_machines_page_present_resize (self, name, target);
   else
-    ptyxis_machines_page_stop_for_resize (self, name, target);
+    ptyxis_machines_page_stop_for_resize (self, name, target, generation);
 }
 
 static void
@@ -1910,7 +1940,6 @@ ptyxis_machines_page_resize_action (GtkWidget  *widget,
   g_autofree char *body = NULL;
   g_autofree char *paragraph = NULL;
   g_autofree char *text = NULL;
-  g_autoptr(GtkAdjustment) adjustment = NULL;
   GtkWidget *list;
   GtkWidget *spin;
   AdwDialog *alert;
@@ -1952,12 +1981,15 @@ ptyxis_machines_page_resize_action (GtkWidget  *widget,
 
   text = g_strdup_printf ("%s\n\n%s", body, paragraph);
 
-  adjustment = gtk_adjustment_new ((double)ptyxis_machine_suggest_disk_size (data_disk_gib),
-                                   data_disk_gib + 1,
-                                   PTYXIS_MACHINE_MAX_DISK_GIB,
-                                   1, 16, 0);
-
-  spin = adw_spin_row_new (adjustment, 0, 0);
+  /* gtk_adjustment_new() returns a floating reference that the row sinks;
+   * holding it here and unrefing it at return would free the row's adjustment
+   * (AGENTS.md: Floating references).
+   */
+  spin = adw_spin_row_new (gtk_adjustment_new ((double)ptyxis_machine_suggest_disk_size (data_disk_gib),
+                                               data_disk_gib + 1,
+                                               PTYXIS_MACHINE_MAX_DISK_GIB,
+                                               1, 16, 0),
+                           0, 0);
   adw_preferences_row_set_title (ADW_PREFERENCES_ROW (spin), _("New Size"));
   adw_action_row_set_subtitle (ADW_ACTION_ROW (spin), _("GiB"));
 

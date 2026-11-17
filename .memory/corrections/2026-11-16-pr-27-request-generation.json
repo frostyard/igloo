@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-16",
+  "scope": "src/ptyxis-machines-page.c",
+  "correction": "Belief: the resize wait is the only state a grow request keeps, so a second request replaces the first. Reality: a direct request for a stopped VM started no wait and left the first timeout, name and busy count in place, and overlapping stop callbacks could finish out of order and start a wait for the older request; number the requests and ignore every answer that is not the newest",
+  "evidence": "frostyard/igloo#27 cross-review (openai/gpt-6.1-sol) of head e933281, finding 3",
+  "promoted_to": "testsuite/test-machine-util.c (test: /Ptyxis/MachineUtil/requests)"
+}
