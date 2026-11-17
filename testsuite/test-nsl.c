@@ -442,6 +442,83 @@ test_nsl_vm_unit_stopped (void)
     g_assert_cmpint (ptyxis_nsl_vm_unit_stopped (cases[i].previous, cases[i].active), ==, cases[i].expected);
 }
 
+#define VM_UNIT "/org/freedesktop/systemd1/unit/nsl_2d1000_2dvm_2d0123456789abcdef0123456789abcdef_2eservice"
+#define PORTS_UNIT "/org/freedesktop/systemd1/unit/nsl_2d1000_2dports_2d0123456789abcdef0123456789abcdef_2eservice"
+
+static GHashTable *
+new_unit_states (void)
+{
+  return g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
+}
+
+static void
+test_nsl_unit_states (void)
+{
+  /* A VM that ran before the watcher started powers off from "active"
+   * straight to "inactive": the listed state makes that a stop
+   */
+  {
+    g_autoptr(GHashTable) states = new_unit_states ();
+
+    g_assert_true (ptyxis_nsl_unit_states_seed (states, VM_UNIT, "active"));
+    g_assert_true (ptyxis_nsl_unit_states_update (states, VM_UNIT, "inactive"));
+  }
+
+  {
+    g_autoptr(GHashTable) states = new_unit_states ();
+
+    g_assert_true (ptyxis_nsl_unit_states_seed (states, VM_UNIT, "active"));
+    g_assert_true (ptyxis_nsl_unit_states_update (states, VM_UNIT, "failed"));
+  }
+
+  /* Without it, a unit loaded for a query is never a stop */
+  {
+    g_autoptr(GHashTable) states = new_unit_states ();
+
+    g_assert_false (ptyxis_nsl_unit_states_update (states, VM_UNIT, "inactive"));
+    g_assert_false (ptyxis_nsl_unit_states_update (states, VM_UNIT, "inactive"));
+  }
+
+  /* A signal before the list is as new as the list: the list does not
+   * replace it
+   */
+  {
+    g_autoptr(GHashTable) states = new_unit_states ();
+
+    g_assert_false (ptyxis_nsl_unit_states_update (states, VM_UNIT, "inactive"));
+    g_assert_false (ptyxis_nsl_unit_states_seed (states, VM_UNIT, "active"));
+    g_assert_false (ptyxis_nsl_unit_states_update (states, VM_UNIT, "inactive"));
+  }
+
+  {
+    g_autoptr(GHashTable) states = new_unit_states ();
+
+    g_assert_false (ptyxis_nsl_unit_states_update (states, VM_UNIT, "deactivating"));
+    g_assert_false (ptyxis_nsl_unit_states_seed (states, VM_UNIT, "inactive"));
+    g_assert_true (ptyxis_nsl_unit_states_update (states, VM_UNIT, "inactive"));
+  }
+
+  /* A full cycle, then a second start and stop */
+  {
+    g_autoptr(GHashTable) states = new_unit_states ();
+
+    g_assert_false (ptyxis_nsl_unit_states_update (states, VM_UNIT, "activating"));
+    g_assert_false (ptyxis_nsl_unit_states_update (states, VM_UNIT, "active"));
+    g_assert_true (ptyxis_nsl_unit_states_update (states, VM_UNIT, "inactive"));
+    g_assert_false (ptyxis_nsl_unit_states_update (states, VM_UNIT, "active"));
+    g_assert_true (ptyxis_nsl_unit_states_update (states, VM_UNIT, "inactive"));
+  }
+
+  /* Other units are not recorded */
+  {
+    g_autoptr(GHashTable) states = new_unit_states ();
+
+    g_assert_false (ptyxis_nsl_unit_states_seed (states, PORTS_UNIT, "active"));
+    g_assert_false (ptyxis_nsl_unit_states_update (states, PORTS_UNIT, "inactive"));
+    g_assert_cmpuint (g_hash_table_size (states), ==, 0);
+  }
+}
+
 static void
 test_nsl_translate_uri (void)
 {
@@ -693,6 +770,7 @@ main (int argc,
   g_test_add_func ("/Ptyxis/Nsl/names", test_nsl_names);
   g_test_add_func ("/Ptyxis/Nsl/vm-unit-path", test_nsl_vm_unit_path);
   g_test_add_func ("/Ptyxis/Nsl/vm-unit-stopped", test_nsl_vm_unit_stopped);
+  g_test_add_func ("/Ptyxis/Nsl/unit-states", test_nsl_unit_states);
   g_test_add_func ("/Ptyxis/Nsl/translate-uri", test_nsl_translate_uri);
   g_test_add_func ("/Ptyxis/Nsl/translate-directory", test_nsl_translate_directory);
   g_test_add_func ("/Ptyxis/Nsl/guest-directory", test_nsl_guest_directory);

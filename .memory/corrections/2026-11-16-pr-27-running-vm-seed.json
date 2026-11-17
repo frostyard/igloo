@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-16",
+  "scope": "agent/ptyxis-nsl-provider.c",
+  "correction": "Belief: following ActiveState signals from the moment the watcher starts sees every VM stop. Reality: a VM that already ran when Igloo started has no recorded state, and it can power off from active straight to inactive, which then looks like a unit loaded for a query and is ignored; list the loaded nsl VM units once after subscribing, without replacing a state that a signal already gave",
+  "evidence": "frostyard/igloo#27 cross-review (openai/gpt-6.1-sol) re-review 1 of head 99e62ba, finding 1",
+  "promoted_to": "testsuite/test-nsl.c (test: /Ptyxis/Nsl/unit-states)"
+}

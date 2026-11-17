@@ -319,6 +319,65 @@ ptyxis_nsl_vm_unit_stopped (const char *previous_state,
 }
 
 /**
+ * ptyxis_nsl_unit_states_update:
+ * @states: a table of object path to the last ActiveState, as strings
+ * @object_path: the object path of a unit that reported a change
+ * @active_state: the ActiveState it reports now
+ *
+ * Records a change that systemd signalled for an nsl VM unit.
+ *
+ * Returns: whether the change is a VM that stopped
+ */
+gboolean
+ptyxis_nsl_unit_states_update (GHashTable *states,
+                               const char *object_path,
+                               const char *active_state)
+{
+  g_autofree char *previous_state = NULL;
+
+  g_return_val_if_fail (states != NULL, FALSE);
+
+  if (!ptyxis_nsl_is_vm_unit_path (object_path) || active_state == NULL)
+    return FALSE;
+
+  /* The lookup is borrowed, and the replace frees the state it points at */
+  previous_state = g_strdup (g_hash_table_lookup (states, object_path));
+  g_hash_table_replace (states, g_strdup (object_path), g_strdup (active_state));
+
+  return ptyxis_nsl_vm_unit_stopped (previous_state, active_state);
+}
+
+/**
+ * ptyxis_nsl_unit_states_seed:
+ * @states: a table of object path to the last ActiveState, as strings
+ * @object_path: the object path of a loaded unit
+ * @active_state: its ActiveState when systemd listed it
+ *
+ * Records the state of a unit that was loaded before the watcher started,
+ * so that a VM that already runs counts as stopped when it next reports
+ * "inactive" or "failed". A signal that came before the list is newer
+ * than the list or as new, so a state that is known already stays.
+ *
+ * Returns: whether the state was recorded
+ */
+gboolean
+ptyxis_nsl_unit_states_seed (GHashTable *states,
+                             const char *object_path,
+                             const char *active_state)
+{
+  g_return_val_if_fail (states != NULL, FALSE);
+
+  if (!ptyxis_nsl_is_vm_unit_path (object_path) ||
+      active_state == NULL ||
+      g_hash_table_contains (states, object_path))
+    return FALSE;
+
+  g_hash_table_insert (states, g_strdup (object_path), g_strdup (active_state));
+
+  return TRUE;
+}
+
+/**
  * ptyxis_nsl_parse_machines:
  * @json: the output of `nsl list --json`
  *

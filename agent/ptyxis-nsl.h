@@ -76,6 +76,12 @@ gboolean   ptyxis_nsl_is_valid_name        (const char        *name);
 gboolean   ptyxis_nsl_is_vm_unit_path      (const char        *object_path);
 gboolean   ptyxis_nsl_vm_unit_stopped      (const char        *previous_state,
                                             const char        *active_state);
+gboolean   ptyxis_nsl_unit_states_update   (GHashTable        *states,
+                                            const char        *object_path,
+                                            const char        *active_state);
+gboolean   ptyxis_nsl_unit_states_seed     (GHashTable        *states,
+                                            const char        *object_path,
+                                            const char        *active_state);
 GPtrArray *ptyxis_nsl_parse_machines       (const char        *json,
                                             GError           **error);
 GPtrArray *ptyxis_nsl_parse_vms            (const char        *json,

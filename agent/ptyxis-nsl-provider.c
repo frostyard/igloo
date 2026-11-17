@@ -483,7 +483,6 @@ ptyxis_nsl_provider_unit_changed_cb (GDBusConnection *connection,
   PtyxisNslProvider *self = user_data;
   g_autoptr(GVariant) changed = NULL;
   g_autoptr(GVariant) invalidated = NULL;
-  g_autofree char *previous_state = NULL;
   const char *changed_interface = NULL;
   const char *active_state = NULL;
 
@@ -502,16 +501,48 @@ ptyxis_nsl_provider_unit_changed_cb (GDBusConnection *connection,
       !g_variant_lookup (changed, "ActiveState", "&s", &active_state))
     return;
 
-  /* The lookup is borrowed, and the replace frees the state it points at */
-  previous_state = g_strdup (g_hash_table_lookup (self->unit_states, object_path));
-  g_hash_table_replace (self->unit_states, g_strdup (object_path), g_strdup (active_state));
-
   /* Only a unit that ran and stopped counts: a unit systemd loaded to answer
    * a query reports inactive with no state before it, and reacting to that
    * would make every list trigger another.
    */
-  if (ptyxis_nsl_vm_unit_stopped (previous_state, active_state))
+  if (ptyxis_nsl_unit_states_update (self->unit_states, object_path, active_state))
     ptyxis_nsl_provider_queue_update (self);
+}
+
+/* Records the VM units that were loaded before the watcher started: a VM
+ * that already runs can power off from "active" straight to "inactive", and
+ * without its state from this list that stop would look like a query.
+ */
+static void
+ptyxis_nsl_provider_list_units_cb (GObject      *object,
+                                   GAsyncResult *result,
+                                   gpointer      user_data)
+{
+  g_autoptr(PtyxisNslProvider) self = user_data;
+  g_autoptr(GVariant) reply = NULL;
+  g_autoptr(GVariantIter) units = NULL;
+  g_autoptr(GError) error = NULL;
+  const char *active_state;
+  const char *object_path;
+
+  g_assert (G_IS_DBUS_CONNECTION (object));
+  g_assert (PTYXIS_IS_NSL_PROVIDER (self));
+
+  if (!(reply = g_dbus_connection_call_finish (G_DBUS_CONNECTION (object), result, &error)))
+    {
+      g_debug ("systemd: could not list the nsl VM units: %s", error->message);
+      return;
+    }
+
+  if (self->disposed)
+    return;
+
+  g_variant_get (reply, "(a(ssssssouso))", &units);
+
+  while (g_variant_iter_next (units, "(&s&s&s&s&s&s&ou&s&o)",
+                              NULL, NULL, NULL, &active_state, NULL, NULL,
+                              &object_path, NULL, NULL, NULL))
+    ptyxis_nsl_unit_states_seed (self->unit_states, object_path, active_state);
 }
 
 static void
@@ -584,6 +615,24 @@ ptyxis_nsl_provider_bus_cb (GObject      *object,
                           NULL,
                           ptyxis_nsl_provider_subscribe_cb,
                           NULL);
+
+  /* After the match rule and Subscribe, so that the list and the signals
+   * arrive in the order systemd sent them
+   */
+  g_dbus_connection_call (self->bus,
+                          "org.freedesktop.systemd1",
+                          "/org/freedesktop/systemd1",
+                          "org.freedesktop.systemd1.Manager",
+                          "ListUnitsByPatterns",
+                          g_variant_new ("(@as^as)",
+                                         g_variant_new_strv (NULL, 0),
+                                         (const char * const[]) { "nsl-*-vm-*.service", NULL }),
+                          G_VARIANT_TYPE ("(a(ssssssouso))"),
+                          G_DBUS_CALL_FLAGS_NONE,
+                          -1,
+                          NULL,
+                          ptyxis_nsl_provider_list_units_cb,
+                          g_object_ref (self));
 
   g_object_unref (self);
 }

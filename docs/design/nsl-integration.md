@@ -33,7 +33,10 @@ Igloo adds to the agent:
   default machine, when systemd reports that an nsl VM unit stopped (a VM's
   runtime directory appears on its first start and stays, so nsl removes no
   file to watch when an isolated VM powers off), and shortly after a terminal
-  starts a machine. It never polls: an `nsl list` against a running VM counts
+  starts a machine. For the VM units, it follows `ActiveState` changes on the
+  session bus and lists the loaded `nsl-*-vm-*.service` units once at start,
+  so a VM that already runs counts as stopped when it powers off; a unit that
+  systemd loads only to answer a query never counts. It never polls: an `nsl list` against a running VM counts
   as activity and would keep the VM from idling.
 - `PtyxisNslContainer` (`agent/ptyxis-nsl-container.c`) spawns terminals with
   `nsl run -m NAME --cd / -- env VARS… /bin/sh -c SCRIPT DIR ARGV…`. nsl only
