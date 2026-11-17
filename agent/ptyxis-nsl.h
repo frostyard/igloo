@@ -27,6 +27,9 @@ G_BEGIN_DECLS
 /* Machines see shared host trees under this prefix. */
 #define PTYXIS_NSL_HOST_PREFIX "/mnt/host"
 
+/* Where systemd exports its units on the session bus */
+#define PTYXIS_NSL_SYSTEMD_UNIT_PREFIX "/org/freedesktop/systemd1/unit/"
+
 typedef struct _PtyxisNslMachine
 {
   char     *name;
@@ -35,6 +38,14 @@ typedef struct _PtyxisNslMachine
   char     *tier;
   gboolean  is_default;
 } PtyxisNslMachine;
+
+typedef struct _PtyxisNslVm
+{
+  char     *name;
+  char     *role;
+  char     *state;
+  gint64    data_disk_gib;
+} PtyxisNslVm;
 
 typedef struct _PtyxisNslImage
 {
@@ -56,12 +67,24 @@ typedef struct _PtyxisNslSetting
 } PtyxisNslSetting;
 
 void       ptyxis_nsl_machine_free         (PtyxisNslMachine  *machine);
+void       ptyxis_nsl_vm_free              (PtyxisNslVm       *vm);
 void       ptyxis_nsl_image_free           (PtyxisNslImage    *image);
 void       ptyxis_nsl_setting_free         (PtyxisNslSetting  *setting);
 char      *ptyxis_nsl_find_program         (void);
 char      *ptyxis_nsl_dup_home             (void);
 gboolean   ptyxis_nsl_is_valid_name        (const char        *name);
+gboolean   ptyxis_nsl_is_vm_unit_path      (const char        *object_path);
+gboolean   ptyxis_nsl_vm_unit_stopped      (const char        *previous_state,
+                                            const char        *active_state);
+gboolean   ptyxis_nsl_unit_states_update   (GHashTable        *states,
+                                            const char        *object_path,
+                                            const char        *active_state);
+gboolean   ptyxis_nsl_unit_states_seed     (GHashTable        *states,
+                                            const char        *object_path,
+                                            const char        *active_state);
 GPtrArray *ptyxis_nsl_parse_machines       (const char        *json,
+                                            GError           **error);
+GPtrArray *ptyxis_nsl_parse_vms            (const char        *json,
                                             GError           **error);
 GPtrArray *ptyxis_nsl_parse_images         (const char        *json,
                                             GError           **error);
@@ -74,6 +97,7 @@ char      *ptyxis_nsl_translate_directory  (const char        *directory);
 char      *ptyxis_nsl_translate_uri        (const char        *uri);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC (PtyxisNslMachine, ptyxis_nsl_machine_free)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (PtyxisNslVm, ptyxis_nsl_vm_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC (PtyxisNslImage, ptyxis_nsl_image_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC (PtyxisNslSetting, ptyxis_nsl_setting_free)
 

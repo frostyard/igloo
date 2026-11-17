@@ -42,6 +42,10 @@ struct _PtyxisNslProvider
   char *nsl_home;
   GPtrArray *monitors;
   guint queued_update;
+  GDBusConnection *bus;
+  GHashTable *unit_states;
+  guint unit_subscription;
+  guint disposed : 1;
 };
 
 enum {
@@ -50,6 +54,33 @@ enum {
 };
 
 static guint signals[N_SIGNALS];
+
+/* What `nsl list` returned: the machines it manages and the VMs it runs */
+typedef struct
+{
+  GPtrArray *machines;
+  GPtrArray *vms;
+} PtyxisNslListResult;
+
+static void
+list_result_free (PtyxisNslListResult *result)
+{
+  g_clear_pointer (&result->machines, g_ptr_array_unref);
+  g_clear_pointer (&result->vms, g_ptr_array_unref);
+  g_free (result);
+}
+
+static PtyxisNslListResult *
+list_result_new (GPtrArray *machines,
+                 GPtrArray *vms)
+{
+  PtyxisNslListResult *result = g_new0 (PtyxisNslListResult, 1);
+
+  result->machines = machines;
+  result->vms = vms;
+
+  return result;
+}
 
 G_DEFINE_TYPE (PtyxisNslProvider, ptyxis_nsl_provider, PTYXIS_TYPE_CONTAINER_PROVIDER)
 
@@ -178,6 +209,7 @@ ptyxis_nsl_provider_list_cb (GObject      *object,
   GSubprocess *subprocess = (GSubprocess *)object;
   g_autoptr(GTask) task = user_data;
   g_autoptr(GPtrArray) machines = NULL;
+  g_autoptr(GPtrArray) vms = NULL;
   g_autoptr(GError) error = NULL;
   g_autofree char *stdout_buf = NULL;
   g_autofree char *stderr_buf = NULL;
@@ -209,9 +241,17 @@ ptyxis_nsl_provider_list_cb (GObject      *object,
       return;
     }
 
+  /* The VMs come from the same document; a document without them leaves the
+   * sizes and states unknown, which only hides the disk rows.
+   */
+  if (!(vms = ptyxis_nsl_parse_vms (stdout_buf, NULL)))
+    vms = g_ptr_array_new_with_free_func ((GDestroyNotify)ptyxis_nsl_vm_free);
+
   ptyxis_nsl_provider_merge (self, machines);
 
-  g_task_return_pointer (task, g_steal_pointer (&machines), (GDestroyNotify)g_ptr_array_unref);
+  g_task_return_pointer (task,
+                         list_result_new (g_steal_pointer (&machines), g_steal_pointer (&vms)),
+                         (GDestroyNotify)list_result_free);
 }
 
 void
@@ -234,9 +274,12 @@ ptyxis_nsl_provider_list_async (PtyxisNslProvider   *self,
   if (self->nsl_path == NULL)
     {
       g_autoptr(GPtrArray) empty = g_ptr_array_new_with_free_func ((GDestroyNotify)ptyxis_nsl_machine_free);
+      g_autoptr(GPtrArray) no_vms = g_ptr_array_new_with_free_func ((GDestroyNotify)ptyxis_nsl_vm_free);
 
       ptyxis_nsl_provider_merge (self, empty);
-      g_task_return_pointer (task, g_steal_pointer (&empty), (GDestroyNotify)g_ptr_array_unref);
+      g_task_return_pointer (task,
+                             list_result_new (g_steal_pointer (&empty), g_steal_pointer (&no_vms)),
+                             (GDestroyNotify)list_result_free);
       return;
     }
 
@@ -263,15 +306,40 @@ ptyxis_nsl_provider_list_async (PtyxisNslProvider   *self,
                                        g_steal_pointer (&task));
 }
 
+/**
+ * ptyxis_nsl_provider_list_finish:
+ * @self: a #PtyxisNslProvider
+ * @result: the result of ptyxis_nsl_provider_list_async()
+ * @vms: (out) (optional) (transfer full): the VMs `nsl list` reported
+ * @error: a location for an error
+ *
+ * Returns: (transfer full) (nullable): the machines, or %NULL on error
+ */
 GPtrArray *
 ptyxis_nsl_provider_list_finish (PtyxisNslProvider  *self,
                                  GAsyncResult       *result,
+                                 GPtrArray         **vms,
                                  GError            **error)
 {
+  g_autoptr(GPtrArray) machines = NULL;
+  PtyxisNslListResult *list;
+
   g_return_val_if_fail (PTYXIS_IS_NSL_PROVIDER (self), NULL);
   g_return_val_if_fail (G_IS_TASK (result), NULL);
 
-  return g_task_propagate_pointer (G_TASK (result), error);
+  if (vms != NULL)
+    *vms = NULL;
+
+  if (!(list = g_task_propagate_pointer (G_TASK (result), error)))
+    return NULL;
+
+  if (vms != NULL)
+    *vms = g_steal_pointer (&list->vms);
+
+  machines = g_steal_pointer (&list->machines);
+  list_result_free (list);
+
+  return g_steal_pointer (&machines);
 }
 
 static void
@@ -286,7 +354,7 @@ ptyxis_nsl_provider_update_cb (GObject      *object,
   g_assert (PTYXIS_IS_NSL_PROVIDER (self));
   g_assert (G_IS_ASYNC_RESULT (result));
 
-  if (!(machines = ptyxis_nsl_provider_list_finish (self, result, &error)))
+  if (!(machines = ptyxis_nsl_provider_list_finish (self, result, NULL, &error)))
     g_debug ("Failed to list nsl machines: %s", error->message);
 
   g_signal_emit (self, signals[CHANGED], 0);
@@ -389,12 +457,196 @@ ptyxis_nsl_provider_runtime_changed_cb (PtyxisNslProvider *self,
 {
   g_assert (PTYXIS_IS_NSL_PROVIDER (self));
 
-  /* A VM's runtime directory appears and disappears with the VM */
+  /* nsl creates this directory when a VM first starts and never removes it,
+   * so it says nothing about a VM that stops. VM stops come from systemd's
+   * unit signals below.
+   */
   if (event == G_FILE_MONITOR_EVENT_CREATED ||
       event == G_FILE_MONITOR_EVENT_DELETED ||
       event == G_FILE_MONITOR_EVENT_MOVED_IN ||
       event == G_FILE_MONITOR_EVENT_MOVED_OUT)
     ptyxis_nsl_provider_queue_update (self);
+}
+
+/* A VM reports its stop as a change of ActiveState on its systemd unit, and
+ * nsl removes no file to watch when an isolated VM powers off.
+ */
+static void
+ptyxis_nsl_provider_unit_changed_cb (GDBusConnection *connection,
+                                     const char      *sender_name,
+                                     const char      *object_path,
+                                     const char      *interface_name,
+                                     const char      *signal_name,
+                                     GVariant        *parameters,
+                                     gpointer         user_data)
+{
+  PtyxisNslProvider *self = user_data;
+  g_autoptr(GVariant) changed = NULL;
+  g_autoptr(GVariant) invalidated = NULL;
+  const char *changed_interface = NULL;
+  const char *active_state = NULL;
+
+  g_assert (G_IS_DBUS_CONNECTION (connection));
+  g_assert (PTYXIS_IS_NSL_PROVIDER (self));
+
+  if (g_strcmp0 (interface_name, "org.freedesktop.DBus.Properties") != 0 ||
+      g_strcmp0 (signal_name, "PropertiesChanged") != 0 ||
+      !ptyxis_nsl_is_vm_unit_path (object_path))
+    return;
+
+  g_variant_get (parameters, "(&s@a{sv}@as)",
+                 &changed_interface, &changed, &invalidated);
+
+  if (g_strcmp0 (changed_interface, "org.freedesktop.systemd1.Unit") != 0 ||
+      !g_variant_lookup (changed, "ActiveState", "&s", &active_state))
+    return;
+
+  /* Only a unit that ran and stopped counts: a unit systemd loaded to answer
+   * a query reports inactive with no state before it, and reacting to that
+   * would make every list trigger another.
+   */
+  if (ptyxis_nsl_unit_states_update (self->unit_states, object_path, active_state))
+    ptyxis_nsl_provider_queue_update (self);
+}
+
+/* Records the VM units that were loaded before the watcher started: a VM
+ * that already runs can power off from "active" straight to "inactive", and
+ * without its state from this list that stop would look like a query.
+ */
+static void
+ptyxis_nsl_provider_list_units_cb (GObject      *object,
+                                   GAsyncResult *result,
+                                   gpointer      user_data)
+{
+  g_autoptr(PtyxisNslProvider) self = user_data;
+  g_autoptr(GVariant) reply = NULL;
+  g_autoptr(GVariantIter) units = NULL;
+  g_autoptr(GError) error = NULL;
+  const char *active_state;
+  const char *object_path;
+
+  g_assert (G_IS_DBUS_CONNECTION (object));
+  g_assert (PTYXIS_IS_NSL_PROVIDER (self));
+
+  if (!(reply = g_dbus_connection_call_finish (G_DBUS_CONNECTION (object), result, &error)))
+    {
+      g_debug ("systemd: could not list the nsl VM units: %s", error->message);
+      return;
+    }
+
+  if (self->disposed)
+    return;
+
+  g_variant_get (reply, "(a(ssssssouso))", &units);
+
+  while (g_variant_iter_next (units, "(&s&s&s&s&s&s&ou&s&o)",
+                              NULL, NULL, NULL, &active_state, NULL, NULL,
+                              &object_path, NULL, NULL, NULL))
+    ptyxis_nsl_unit_states_seed (self->unit_states, object_path, active_state);
+}
+
+static void
+ptyxis_nsl_provider_subscribe_cb (GObject      *object,
+                                  GAsyncResult *result,
+                                  gpointer      user_data)
+{
+  g_autoptr(GVariant) reply = NULL;
+  g_autoptr(GError) error = NULL;
+
+  g_assert (G_IS_DBUS_CONNECTION (object));
+
+  reply = g_dbus_connection_call_finish (G_DBUS_CONNECTION (object), result, &error);
+
+  if (reply == NULL)
+    g_debug ("systemd: could not subscribe to unit signals: %s", error->message);
+}
+
+static void
+ptyxis_nsl_provider_bus_cb (GObject      *object,
+                            GAsyncResult *result,
+                            gpointer      user_data)
+{
+  PtyxisNslProvider *self = user_data;
+  g_autoptr(GDBusConnection) bus = NULL;
+  g_autoptr(GError) error = NULL;
+
+  g_assert (PTYXIS_IS_NSL_PROVIDER (self));
+
+  bus = g_bus_get_finish (result, &error);
+
+  if (bus == NULL)
+    {
+      g_debug ("systemd: no session bus to watch VM units on: %s", error->message);
+      g_object_unref (self);
+      return;
+    }
+
+  if (self->disposed)
+    {
+      g_object_unref (self);
+      return;
+    }
+
+  self->bus = g_steal_pointer (&bus);
+  self->unit_subscription =
+    g_dbus_connection_signal_subscribe (self->bus,
+                                        "org.freedesktop.systemd1",
+                                        "org.freedesktop.DBus.Properties",
+                                        "PropertiesChanged",
+                                        NULL,
+                                        "org.freedesktop.systemd1.Unit",
+                                        G_DBUS_SIGNAL_FLAGS_NONE,
+                                        ptyxis_nsl_provider_unit_changed_cb,
+                                        self,
+                                        NULL);
+
+  /* systemd sends unit signals only while a client is subscribed; the
+   * answer itself is not needed.
+   */
+  g_dbus_connection_call (self->bus,
+                          "org.freedesktop.systemd1",
+                          "/org/freedesktop/systemd1",
+                          "org.freedesktop.systemd1.Manager",
+                          "Subscribe",
+                          NULL,
+                          NULL,
+                          G_DBUS_CALL_FLAGS_NONE,
+                          -1,
+                          NULL,
+                          ptyxis_nsl_provider_subscribe_cb,
+                          NULL);
+
+  /* After the match rule and Subscribe, so that the list and the signals
+   * arrive in the order systemd sent them
+   */
+  g_dbus_connection_call (self->bus,
+                          "org.freedesktop.systemd1",
+                          "/org/freedesktop/systemd1",
+                          "org.freedesktop.systemd1.Manager",
+                          "ListUnitsByPatterns",
+                          g_variant_new ("(@as^as)",
+                                         g_variant_new_strv (NULL, 0),
+                                         (const char * const[]) { "nsl-*-vm-*.service", NULL }),
+                          G_VARIANT_TYPE ("(a(ssssssouso))"),
+                          G_DBUS_CALL_FLAGS_NONE,
+                          -1,
+                          NULL,
+                          ptyxis_nsl_provider_list_units_cb,
+                          g_object_ref (self));
+
+  g_object_unref (self);
+}
+
+/* Watches the session bus for VMs that stop. There is no session bus in some
+ * sessions; nsl still works there, so a failure only means that a wait for a
+ * VM to stop ends with its timeout.
+ */
+static void
+ptyxis_nsl_provider_watch_units (PtyxisNslProvider *self)
+{
+  g_assert (PTYXIS_IS_NSL_PROVIDER (self));
+
+  g_bus_get (G_BUS_TYPE_SESSION, NULL, ptyxis_nsl_provider_bus_cb, g_object_ref (self));
 }
 
 static void
@@ -589,6 +841,16 @@ ptyxis_nsl_provider_dispose (GObject *object)
 
   g_clear_handle_id (&self->queued_update, g_source_remove);
 
+  self->disposed = TRUE;
+
+  if (self->unit_subscription != 0)
+    {
+      g_dbus_connection_signal_unsubscribe (self->bus, self->unit_subscription);
+      self->unit_subscription = 0;
+    }
+
+  g_clear_object (&self->bus);
+
   G_OBJECT_CLASS (ptyxis_nsl_provider_parent_class)->dispose (object);
 }
 
@@ -598,6 +860,7 @@ ptyxis_nsl_provider_finalize (GObject *object)
   PtyxisNslProvider *self = (PtyxisNslProvider *)object;
 
   g_clear_pointer (&self->monitors, g_ptr_array_unref);
+  g_clear_pointer (&self->unit_states, g_hash_table_unref);
   g_clear_pointer (&self->nsl_path, g_free);
   g_clear_pointer (&self->nsl_home, g_free);
 
@@ -633,6 +896,9 @@ static void
 ptyxis_nsl_provider_init (PtyxisNslProvider *self)
 {
   self->monitors = g_ptr_array_new_with_free_func (g_object_unref);
+  self->unit_states = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
+
+  ptyxis_nsl_provider_watch_units (self);
 }
 
 PtyxisContainerProvider *

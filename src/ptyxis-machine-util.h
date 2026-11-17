@@ -26,6 +26,17 @@ G_BEGIN_DECLS
 
 #define PTYXIS_MACHINE_CONTAINER_PREFIX "nsl:"
 
+/* The largest data disk nsl grows a VM to */
+#define PTYXIS_MACHINE_MAX_DISK_GIB 4096
+
+/* Numbers the requests a page runs, so that the answers to all but the newest
+ * one are ignored. A zeroed struct has no current request.
+ */
+typedef struct
+{
+  guint generation;
+} PtyxisMachineRequests;
+
 gboolean  ptyxis_machine_is_valid_name        (const char         *name);
 gboolean  ptyxis_machine_is_valid_user        (const char         *user);
 char     *ptyxis_machine_describe_image       (const char         *build);
@@ -59,5 +70,22 @@ gboolean  ptyxis_machine_remove_needs_stop    (const char         *state);
 char    **ptyxis_machine_remove_argv          (const char         *nsl,
                                                const char         *name,
                                                const char         *state);
+
+gboolean  ptyxis_machine_disk_can_grow        (gint64              data_disk_gib);
+gboolean  ptyxis_machine_can_resize           (const char         *tier,
+                                               const char         *state,
+                                               gint64              data_disk_gib);
+gboolean  ptyxis_machine_is_valid_disk_size   (gint64              current,
+                                               gint64              target);
+gint64    ptyxis_machine_suggest_disk_size    (gint64              current);
+gboolean  ptyxis_machine_vm_needs_stop        (const char         *vm_state);
+char    **ptyxis_machine_vm_stop_args         (const char         *name);
+char    **ptyxis_machine_resize_argv          (const char         *nsl,
+                                               const char         *name,
+                                               gint64              gib);
+
+guint     ptyxis_machine_requests_begin       (PtyxisMachineRequests *self);
+gboolean  ptyxis_machine_requests_is_current  (const PtyxisMachineRequests *self,
+                                               guint                        generation);
 
 G_END_DECLS

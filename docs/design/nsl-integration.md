@@ -29,9 +29,14 @@ Igloo adds to the agent:
   `nsl:NAME`, for every machine `nsl list --json` reports, except incomplete
   machines and machines being removed. It reads machine names from
   `NSL_HOME/machines` at startup, so restored sessions find their machines
-  before `nsl list` finishes. It reloads when nsl changes its records, its
-  default machine or a VM's runtime directory, and shortly after a terminal
-  starts a machine. It never polls: an `nsl list` against a running VM counts
+  before `nsl list` finishes. It reloads when nsl changes its records or its
+  default machine, when systemd reports that an nsl VM unit stopped (a VM's
+  runtime directory appears on its first start and stays, so nsl removes no
+  file to watch when an isolated VM powers off), and shortly after a terminal
+  starts a machine. For the VM units, it follows `ActiveState` changes on the
+  session bus and lists the loaded `nsl-*-vm-*.service` units once at start,
+  so a VM that already runs counts as stopped when it powers off; a unit that
+  systemd loads only to answer a query never counts. It never polls: an `nsl list` against a running VM counts
   as activity and would keep the VM from idling.
 - `PtyxisNslContainer` (`agent/ptyxis-nsl-container.c`) spawns terminals with
   `nsl run -m NAME --cd / -- env VARS… /bin/sh -c SCRIPT DIR ARGV…`. nsl only
@@ -40,8 +45,9 @@ Igloo adds to the agent:
   requested directory, or to the guest home, and starts the account's login
   shell when the requested program is missing in the machine.
 - `org.gnome.Ptyxis.Machines` (`agent/ptyxis-machines-impl.c`, interface in
-  `agent/org.gnome.Ptyxis.Agent.xml`) lists machines and images, reads and
-  writes `nsl.conf`, and runs short nsl commands for the Preferences page.
+  `agent/org.gnome.Ptyxis.Agent.xml`) lists machines, the VMs beside them with
+  their state and data-disk size, and images, reads and writes `nsl.conf`, and
+  runs short nsl commands for the Preferences page.
   Writes keep the file's comments and are checked with `nsl config`; the
   previous file is restored when nsl rejects the new one, and when
   `nsl config` cannot run.
@@ -55,11 +61,13 @@ minimal `PATH`.
 
 `agent/ptyxis-nsl.c` reads the documents `nsl list --json`,
 `nsl images --json` and `nsl config --json` print, as nsl's CLI contract
-defines them. It ignores fields it does not know. `testsuite/test-nsl.c`
-covers real output (fixtures in `testsuite/nsl/`). The *Resources* rows take
-their ranges from `config --json`. nsl 0.8.0 introduced `--json`; with an
-older nsl, machines still open from the New Tab menu, but the Machines page
-asks the user to update.
+defines them. It ignores fields it does not know. From `list --json` it reads
+the machines and the VMs (`vms`): each VM's name, role, state and data-disk
+size, so that Igloo can show the size of a VM's data disk and grow it.
+`testsuite/test-nsl.c` covers real output (fixtures in `testsuite/nsl/`). The
+*Resources* rows take their ranges from `config --json`. nsl 0.8.0
+introduced `--json`; with an older nsl, machines still open from the New Tab
+menu, but the Machines page asks the user to update.
 
 ### Window side
 
@@ -70,7 +78,8 @@ asks the user to update.
   the current machine as they keep the current container.
 - **Main menu → Machines** opens the *Machines* page in Preferences
   (`src/ptyxis-machines-page.c`):
-  - every machine with its distribution, tier, state and default marker;
+  - every machine with its distribution, tier, state, default marker and, for
+    isolated machines, data-disk size;
   - *New Machine* (`src/ptyxis-machine-create-dialog.c`) asks for a name, a
     distribution from the signed nsl catalogue, isolation, default and an
     optional username, then runs `nsl create` in a terminal so downloads and
@@ -88,16 +97,33 @@ asks the user to update.
     *Remove…* (`nsl stop` then
     `nsl remove --yes`, after a confirmation; a machine in the state
     `removing` or `incomplete` runs only `nsl remove --yes`, which resumes
-    its unfinished removal);
+    its unfinished removal), and *Grow Disk…* (isolated machines only, see
+    below);
   - *Resources*: shared VM memory and processors, autostart, idle timeout and
     isolated VM resources, written to `nsl.conf`;
-  - *Host*: `nsl doctor`, `nsl update`, `nsl logs`, `nsl recover` (after a
-    confirmation that says it restarts the shared VM from a fresh root and
-    keeps machines) and `nsl shutdown`. `nsl recover` always starts the VM
-    again, also a VM that was stopped; both confirmations say so.
+  - *Host*: `nsl doctor`, `nsl update`, `nsl logs`, *Grow the Shared VM’s
+    Disk…*, `nsl recover` (after a confirmation that says it restarts the
+    shared VM from a fresh root and keeps machines) and `nsl shutdown`.
+    `nsl recover` always starts the VM again, also a VM that was stopped;
+    both confirmations say so.
+
+  Growing a data disk shows the current size and takes a larger size in
+  GiB up to 4096, because nsl never shrinks a data disk. nsl grows only the
+  disk of a stopped VM. When the VM runs, Igloo runs `nsl shutdown` after the
+  confirmation for the shared VM, which stops every machine and every VM, or
+  `nsl stop NAME` for an isolated machine, and then waits without polling
+  until systemd reports that the VM's unit stopped and the list shows the VM
+  stopped: at most 150 s, because nsl powers an isolated VM off about a minute
+  after its machine stops. The growth itself
+  runs `nsl resize [NAME] --disk GiB` in a terminal as an argument array.
+  After an interrupted growth, nsl accepts only the pending size (or
+  `nsl recover`); it refuses another size and says so in the terminal. The
+  shared VM is the VM with the role `shared`, so an isolated machine named
+  `shared` stays apart from it.
 
   Long commands run in a terminal (`src/ptyxis-machine-command-dialog.c`).
-  Logs and recovery commands run as argument arrays, not through a shell.
+  Logs, recovery and resize commands run as argument arrays, not through a
+  shell.
 - In the Flatpak, a file outside the folders Igloo can see comes from the
   document portal, and Igloo gives nsl its real path on the host.
 

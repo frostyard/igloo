@@ -50,6 +50,14 @@ machine_at (GPtrArray *machines,
   return g_ptr_array_index (machines, i);
 }
 
+static const PtyxisNslVm *
+vm_at (GPtrArray *vms,
+       guint      i)
+{
+  g_assert_cmpuint (i, <, vms->len);
+  return g_ptr_array_index (vms, i);
+}
+
 static void
 test_nsl_list (void)
 {
@@ -133,6 +141,114 @@ test_nsl_list_invalid (void)
   empty = ptyxis_nsl_parse_machines ("{\"machines\": [{\"name\": \"../x\"}, 7, {}]}", &error);
   g_assert_no_error (error);
   g_assert_cmpuint (empty->len, ==, 0);
+}
+
+static void
+test_nsl_list_vms (void)
+{
+  g_autofree char *mixed = load ("list-mixed.json");
+  g_autofree char *json = load ("list.json");
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GPtrArray) vms = NULL;
+  const PtyxisNslVm *v;
+
+  vms = ptyxis_nsl_parse_vms (mixed, &error);
+  g_assert_no_error (error);
+  g_assert_cmpuint (vms->len, ==, 2);
+
+  v = vm_at (vms, 0);
+  g_assert_cmpstr (v->name, ==, "shared");
+  g_assert_cmpstr (v->role, ==, "shared");
+  g_assert_cmpstr (v->state, ==, "running");
+  g_assert_cmpint (v->data_disk_gib, ==, 128);
+
+  /* An isolated machine has a VM of its own */
+  v = vm_at (vms, 1);
+  g_assert_cmpstr (v->name, ==, "sandbox");
+  g_assert_cmpstr (v->role, ==, "isolated");
+  g_assert_cmpstr (v->state, ==, "stopped");
+  g_assert_cmpint (v->data_disk_gib, ==, 32);
+
+  g_clear_pointer (&vms, g_ptr_array_unref);
+  g_clear_error (&error);
+
+  vms = ptyxis_nsl_parse_vms (json, &error);
+  g_assert_no_error (error);
+  g_assert_cmpuint (vms->len, ==, 1);
+
+  v = vm_at (vms, 0);
+  g_assert_cmpstr (v->name, ==, "shared");
+  g_assert_cmpstr (v->role, ==, "shared");
+  g_assert_cmpstr (v->state, ==, "stopped");
+  g_assert_cmpint (v->data_disk_gib, ==, 128);
+}
+
+static void
+test_nsl_list_vms_invalid (void)
+{
+  const char *documents[] = {
+    "",
+    "not json",
+    "[]",
+  };
+  g_autoptr(GPtrArray) empty = NULL;
+  g_autoptr(GPtrArray) vms = NULL;
+  g_autoptr(GError) error = NULL;
+  const PtyxisNslVm *v;
+
+  for (guint i = 0; i < G_N_ELEMENTS (documents); i++)
+    {
+      g_autoptr(GError) local_error = NULL;
+      g_autoptr(GPtrArray) invalid = ptyxis_nsl_parse_vms (documents[i], &local_error);
+
+      g_assert_null (invalid);
+      g_assert_nonnull (local_error);
+    }
+
+  /* A document without VMs, such as from an older nsl, is not an error */
+  empty = ptyxis_nsl_parse_vms ("{\"machines\": []}", &error);
+  g_assert_no_error (error);
+  g_assert_nonnull (empty);
+  g_assert_cmpuint (empty->len, ==, 0);
+
+  /* Rows with invalid names are skipped; a size nsl did not report, or one
+   * outside 1 to 4096 GiB, is 0
+   */
+  vms = ptyxis_nsl_parse_vms ("{\"vms\": [7, {},"
+                              " {\"name\": \"Bad\", \"data_disk_gib\": 64},"
+                              " {\"name\": \"unknown\", \"role\": \"shared\", \"state\": \"stopped\"},"
+                              " {\"name\": \"text\", \"data_disk_gib\": \"64\"},"
+                              " {\"name\": \"zero\", \"data_disk_gib\": 0},"
+                              " {\"name\": \"huge\", \"data_disk_gib\": 5000},"
+                              " {\"name\": \"big\", \"data_disk_gib\": 4096}]}",
+                              &error);
+  g_assert_no_error (error);
+  g_assert_cmpuint (vms->len, ==, 5);
+
+  v = vm_at (vms, 0);
+  g_assert_cmpstr (v->name, ==, "unknown");
+  g_assert_cmpstr (v->role, ==, "shared");
+  g_assert_cmpstr (v->state, ==, "stopped");
+  g_assert_cmpint (v->data_disk_gib, ==, 0);
+
+  v = vm_at (vms, 1);
+  g_assert_cmpstr (v->name, ==, "text");
+  g_assert_cmpint (v->data_disk_gib, ==, 0);
+
+  v = vm_at (vms, 2);
+  g_assert_cmpstr (v->name, ==, "zero");
+  g_assert_cmpint (v->data_disk_gib, ==, 0);
+
+  v = vm_at (vms, 3);
+  g_assert_cmpstr (v->name, ==, "huge");
+  g_assert_cmpint (v->data_disk_gib, ==, 0);
+
+  /* A VM without a role or state has neither */
+  v = vm_at (vms, 4);
+  g_assert_cmpstr (v->name, ==, "big");
+  g_assert_null (v->role);
+  g_assert_null (v->state);
+  g_assert_cmpint (v->data_disk_gib, ==, 4096);
 }
 
 static void
@@ -265,6 +381,142 @@ test_nsl_names (void)
   g_assert_false (ptyxis_nsl_is_valid_name ("Box"));
   g_assert_false (ptyxis_nsl_is_valid_name ("my_box"));
   g_assert_false (ptyxis_nsl_is_valid_name (NULL));
+}
+
+static void
+test_nsl_vm_unit_path (void)
+{
+  /* systemd escapes "-" of a unit name to "_2d" and "." of its type to
+   * "_2e" in the object path
+   */
+  const char *vm_units[] = {
+    "/org/freedesktop/systemd1/unit/nsl_2d1000_2dvm_2d0123abcd_2eservice",
+    "/org/freedesktop/systemd1/unit/nsl_2d0_2dvm_2dff_2eservice",
+  };
+  const char *other_paths[] = {
+    /* The ports and desktop forwarders of the same VM */
+    "/org/freedesktop/systemd1/unit/nsl_2d1000_2dvm_2d0123abcd_2dports_2eservice",
+    "/org/freedesktop/systemd1/unit/nsl_2d1000_2dvm_2d0123abcd_2ddesktop_2dx_2eservice",
+    /* Other units, other services, a path below a unit */
+    "/org/freedesktop/systemd1/unit/graphical_2esession_2etarget",
+    "/org/freedesktop/systemd1/unit/nsl_2d1000_2dvm_2d0123abcd_2esocket",
+    "/org/freedesktop/systemd1/unit/",
+    "/org/freedesktop/systemd1",
+    "/org/freedesktop/systemd1/unit/nsl_2d1000_2dvm_2d0123abcd_2eservice/x",
+    "nsl_2d1000_2dvm_2d0123abcd_2eservice",
+    "",
+  };
+
+  for (guint i = 0; i < G_N_ELEMENTS (vm_units); i++)
+    g_assert_true (ptyxis_nsl_is_vm_unit_path (vm_units[i]));
+
+  for (guint i = 0; i < G_N_ELEMENTS (other_paths); i++)
+    g_assert_false (ptyxis_nsl_is_vm_unit_path (other_paths[i]));
+
+  g_assert_false (ptyxis_nsl_is_vm_unit_path (NULL));
+}
+
+static void
+test_nsl_vm_unit_stopped (void)
+{
+  struct {
+    const char *previous;
+    const char *active;
+    gboolean    expected;
+  } cases[] = {
+    { "deactivating", "inactive", TRUE },
+    { "active", "failed", TRUE },
+    { "activating", "inactive", TRUE },
+    { "reloading", "inactive", TRUE },
+    /* A unit loaded only to answer a query was never running */
+    { NULL, "inactive", FALSE },
+    { NULL, "failed", FALSE },
+    /* Nothing stopped */
+    { "inactive", "inactive", FALSE },
+    { "active", "active", FALSE },
+    { "activating", "active", FALSE },
+    { "active", "deactivating", FALSE },
+  };
+
+  for (guint i = 0; i < G_N_ELEMENTS (cases); i++)
+    g_assert_cmpint (ptyxis_nsl_vm_unit_stopped (cases[i].previous, cases[i].active), ==, cases[i].expected);
+}
+
+#define VM_UNIT "/org/freedesktop/systemd1/unit/nsl_2d1000_2dvm_2d0123456789abcdef0123456789abcdef_2eservice"
+#define PORTS_UNIT "/org/freedesktop/systemd1/unit/nsl_2d1000_2dports_2d0123456789abcdef0123456789abcdef_2eservice"
+
+static GHashTable *
+new_unit_states (void)
+{
+  return g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
+}
+
+static void
+test_nsl_unit_states (void)
+{
+  /* A VM that ran before the watcher started powers off from "active"
+   * straight to "inactive": the listed state makes that a stop
+   */
+  {
+    g_autoptr(GHashTable) states = new_unit_states ();
+
+    g_assert_true (ptyxis_nsl_unit_states_seed (states, VM_UNIT, "active"));
+    g_assert_true (ptyxis_nsl_unit_states_update (states, VM_UNIT, "inactive"));
+  }
+
+  {
+    g_autoptr(GHashTable) states = new_unit_states ();
+
+    g_assert_true (ptyxis_nsl_unit_states_seed (states, VM_UNIT, "active"));
+    g_assert_true (ptyxis_nsl_unit_states_update (states, VM_UNIT, "failed"));
+  }
+
+  /* Without it, a unit loaded for a query is never a stop */
+  {
+    g_autoptr(GHashTable) states = new_unit_states ();
+
+    g_assert_false (ptyxis_nsl_unit_states_update (states, VM_UNIT, "inactive"));
+    g_assert_false (ptyxis_nsl_unit_states_update (states, VM_UNIT, "inactive"));
+  }
+
+  /* A signal before the list is as new as the list: the list does not
+   * replace it
+   */
+  {
+    g_autoptr(GHashTable) states = new_unit_states ();
+
+    g_assert_false (ptyxis_nsl_unit_states_update (states, VM_UNIT, "inactive"));
+    g_assert_false (ptyxis_nsl_unit_states_seed (states, VM_UNIT, "active"));
+    g_assert_false (ptyxis_nsl_unit_states_update (states, VM_UNIT, "inactive"));
+  }
+
+  {
+    g_autoptr(GHashTable) states = new_unit_states ();
+
+    g_assert_false (ptyxis_nsl_unit_states_update (states, VM_UNIT, "deactivating"));
+    g_assert_false (ptyxis_nsl_unit_states_seed (states, VM_UNIT, "inactive"));
+    g_assert_true (ptyxis_nsl_unit_states_update (states, VM_UNIT, "inactive"));
+  }
+
+  /* A full cycle, then a second start and stop */
+  {
+    g_autoptr(GHashTable) states = new_unit_states ();
+
+    g_assert_false (ptyxis_nsl_unit_states_update (states, VM_UNIT, "activating"));
+    g_assert_false (ptyxis_nsl_unit_states_update (states, VM_UNIT, "active"));
+    g_assert_true (ptyxis_nsl_unit_states_update (states, VM_UNIT, "inactive"));
+    g_assert_false (ptyxis_nsl_unit_states_update (states, VM_UNIT, "active"));
+    g_assert_true (ptyxis_nsl_unit_states_update (states, VM_UNIT, "inactive"));
+  }
+
+  /* Other units are not recorded */
+  {
+    g_autoptr(GHashTable) states = new_unit_states ();
+
+    g_assert_false (ptyxis_nsl_unit_states_seed (states, PORTS_UNIT, "active"));
+    g_assert_false (ptyxis_nsl_unit_states_update (states, PORTS_UNIT, "inactive"));
+    g_assert_cmpuint (g_hash_table_size (states), ==, 0);
+  }
 }
 
 static void
@@ -509,11 +761,16 @@ main (int argc,
   g_test_add_func ("/Ptyxis/Nsl/list", test_nsl_list);
   g_test_add_func ("/Ptyxis/Nsl/list-mixed", test_nsl_list_mixed);
   g_test_add_func ("/Ptyxis/Nsl/list-invalid", test_nsl_list_invalid);
+  g_test_add_func ("/Ptyxis/Nsl/list-vms", test_nsl_list_vms);
+  g_test_add_func ("/Ptyxis/Nsl/list-vms-invalid", test_nsl_list_vms_invalid);
   g_test_add_func ("/Ptyxis/Nsl/images", test_nsl_images);
   g_test_add_func ("/Ptyxis/Nsl/config", test_nsl_config);
   g_test_add_func ("/Ptyxis/Nsl/config-file", test_nsl_config_file);
   g_test_add_func ("/Ptyxis/Nsl/error-message", test_nsl_error_message);
   g_test_add_func ("/Ptyxis/Nsl/names", test_nsl_names);
+  g_test_add_func ("/Ptyxis/Nsl/vm-unit-path", test_nsl_vm_unit_path);
+  g_test_add_func ("/Ptyxis/Nsl/vm-unit-stopped", test_nsl_vm_unit_stopped);
+  g_test_add_func ("/Ptyxis/Nsl/unit-states", test_nsl_unit_states);
   g_test_add_func ("/Ptyxis/Nsl/translate-uri", test_nsl_translate_uri);
   g_test_add_func ("/Ptyxis/Nsl/translate-directory", test_nsl_translate_directory);
   g_test_add_func ("/Ptyxis/Nsl/guest-directory", test_nsl_guest_directory);

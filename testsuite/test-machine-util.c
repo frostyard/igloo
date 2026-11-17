@@ -303,6 +303,218 @@ test_remove_needs_stop (void)
     g_assert_cmpint (ptyxis_machine_remove_needs_stop (cases[i].state), ==, cases[i].expected);
 }
 
+static void
+test_resize_argv (void)
+{
+  const char *names[] = { "sandbox", "dev-box-2" };
+
+  /* The shared VM is named by no argument at all */
+  {
+    g_auto(GStrv) argv = ptyxis_machine_resize_argv ("/host/bin/nsl", NULL, 256);
+
+    g_assert_cmpuint (g_strv_length (argv), ==, 4);
+    g_assert_cmpstr (argv[0], ==, "/host/bin/nsl");
+    g_assert_cmpstr (argv[1], ==, "resize");
+    g_assert_cmpstr (argv[2], ==, "--disk");
+    g_assert_cmpstr (argv[3], ==, "256");
+    g_assert_null (argv[4]);
+  }
+
+  for (guint i = 0; i < G_N_ELEMENTS (names); i++)
+    {
+      g_auto(GStrv) argv = ptyxis_machine_resize_argv ("/host/bin/nsl", names[i], 4096);
+
+      g_assert_cmpuint (g_strv_length (argv), ==, 5);
+      g_assert_cmpstr (argv[0], ==, "/host/bin/nsl");
+      g_assert_cmpstr (argv[1], ==, "resize");
+      g_assert_cmpstr (argv[2], ==, names[i]);
+      g_assert_cmpstr (argv[3], ==, "--disk");
+      g_assert_cmpstr (argv[4], ==, "4096");
+      g_assert_null (argv[5]);
+    }
+
+  /* A name or a size nsl does not accept gives no command */
+  {
+    g_auto(GStrv) argv = ptyxis_machine_resize_argv ("/host/bin/nsl", "-x", 256);
+    g_assert_null (argv);
+  }
+
+  {
+    g_auto(GStrv) argv = ptyxis_machine_resize_argv ("/host/bin/nsl", "Bad", 256);
+    g_assert_null (argv);
+  }
+
+  {
+    g_auto(GStrv) argv = ptyxis_machine_resize_argv (NULL, NULL, 256);
+    g_assert_null (argv);
+  }
+
+  {
+    gint64 sizes[] = { 0, -1, 4097 };
+    guint i;
+    g_auto(GStrv) argv = NULL;
+
+    for (i = 0; i < G_N_ELEMENTS (sizes); i++)
+      {
+        g_clear_pointer (&argv, g_strfreev);
+        argv = ptyxis_machine_resize_argv ("/host/bin/nsl", NULL, sizes[i]);
+        g_assert_null (argv);
+      }
+  }
+}
+
+static void
+test_vm_stop_args (void)
+{
+  g_auto(GStrv) argv = NULL;
+
+  /* The shared VM is stopped together with every machine and VM */
+  argv = ptyxis_machine_vm_stop_args (NULL);
+  g_assert_cmpuint (g_strv_length (argv), ==, 1);
+  g_assert_cmpstr (argv[0], ==, "shutdown");
+  g_clear_pointer (&argv, g_strfreev);
+
+  argv = ptyxis_machine_vm_stop_args ("sandbox");
+  g_assert_cmpuint (g_strv_length (argv), ==, 2);
+  g_assert_cmpstr (argv[0], ==, "stop");
+  g_assert_cmpstr (argv[1], ==, "sandbox");
+  g_clear_pointer (&argv, g_strfreev);
+
+  /* A name nsl would reject is never an argument */
+  g_assert_null (ptyxis_machine_vm_stop_args ("-x"));
+  g_assert_null (ptyxis_machine_vm_stop_args ("Bad"));
+  g_assert_null (ptyxis_machine_vm_stop_args (""));
+}
+
+static void
+test_vm_needs_stop (void)
+{
+  struct {
+    const char *state;
+    gboolean expected;
+  } cases[] = {
+    { NULL, TRUE },
+    { "", TRUE },
+    { "running", TRUE },
+    { "stopping", TRUE },
+    { "starting", TRUE },
+    { "stopped", FALSE },
+    { "failed", FALSE },
+  };
+
+  for (guint i = 0; i < G_N_ELEMENTS (cases); i++)
+    g_assert_cmpint (ptyxis_machine_vm_needs_stop (cases[i].state), ==, cases[i].expected);
+}
+
+static void
+test_can_resize (void)
+{
+  struct {
+    const char *tier;
+    const char *state;
+    gint64      data_disk_gib;
+    gboolean    expected;
+  } cases[] = {
+    { "isolated", "stopped", 32, TRUE },
+    { "isolated", "running", 32, TRUE },
+    { "isolated", NULL, 32, TRUE },
+    { "shared", "stopped", 32, FALSE },
+    { NULL, "stopped", 32, FALSE },
+    { "isolated", "stopped", 4096, FALSE },
+    { "isolated", "stopped", 0, FALSE },
+    { "isolated", "incomplete", 32, FALSE },
+    { "isolated", "removing", 32, FALSE },
+  };
+
+  for (guint i = 0; i < G_N_ELEMENTS (cases); i++)
+    g_assert_cmpint (ptyxis_machine_can_resize (cases[i].tier, cases[i].state, cases[i].data_disk_gib), ==, cases[i].expected);
+}
+
+static void
+test_disk_can_grow (void)
+{
+  struct {
+    gint64   data_disk_gib;
+    gboolean expected;
+  } cases[] = {
+    { 0, FALSE },
+    { -1, FALSE },
+    { 1, TRUE },
+    { 128, TRUE },
+    { 4095, TRUE },
+    { 4096, FALSE },
+    { 5000, FALSE },
+  };
+
+  for (guint i = 0; i < G_N_ELEMENTS (cases); i++)
+    g_assert_cmpint (ptyxis_machine_disk_can_grow (cases[i].data_disk_gib), ==, cases[i].expected);
+}
+
+static void
+test_is_valid_disk_size (void)
+{
+  struct {
+    gint64   current;
+    gint64   target;
+    gboolean expected;
+  } cases[] = {
+    { 128, 256, TRUE },
+    { 128, 4096, TRUE },
+    { 128, 129, TRUE },
+    /* nsl never shrinks a disk */
+    { 128, 128, FALSE },
+    { 128, 64, FALSE },
+    { 128, 4097, FALSE },
+    { 0, 128, FALSE },
+    { -1, 128, FALSE },
+  };
+
+  for (guint i = 0; i < G_N_ELEMENTS (cases); i++)
+    g_assert_cmpint (ptyxis_machine_is_valid_disk_size (cases[i].current, cases[i].target), ==, cases[i].expected);
+}
+
+static void
+test_suggest_disk_size (void)
+{
+  struct {
+    gint64 current;
+    gint64 expected;
+  } cases[] = {
+    { 0, 0 },
+    { -1, 0 },
+    { 32, 64 },
+    { 128, 256 },
+    { 2048, 4096 },
+    { 3000, 4096 },
+    { 4095, 4096 },
+  };
+
+  for (guint i = 0; i < G_N_ELEMENTS (cases); i++)
+    g_assert_cmpint (ptyxis_machine_suggest_disk_size (cases[i].current), ==, cases[i].expected);
+}
+
+static void
+test_requests (void)
+{
+  PtyxisMachineRequests requests = { 0 };
+  guint first;
+  guint second;
+
+  /* 0 means no request ever began */
+  g_assert_false (ptyxis_machine_requests_is_current (&requests, 0));
+
+  first = ptyxis_machine_requests_begin (&requests);
+  g_assert_cmpuint (first, >, 0);
+  g_assert_true (ptyxis_machine_requests_is_current (&requests, first));
+
+  /* A second request replaces the first: only its answers count */
+  second = ptyxis_machine_requests_begin (&requests);
+  g_assert_cmpuint (second, >, first);
+  g_assert_true (ptyxis_machine_requests_is_current (&requests, second));
+  g_assert_false (ptyxis_machine_requests_is_current (&requests, first));
+  g_assert_false (ptyxis_machine_requests_is_current (&requests, 0));
+}
+
 int
 main (int argc,
       char *argv[])
@@ -319,6 +531,15 @@ main (int argc,
   g_test_add_func ("/Ptyxis/MachineUtil/can-recover", test_can_recover);
   g_test_add_func ("/Ptyxis/MachineUtil/remove-argv", test_remove_argv);
   g_test_add_func ("/Ptyxis/MachineUtil/remove-needs-stop", test_remove_needs_stop);
+
+  g_test_add_func ("/Ptyxis/MachineUtil/resize-argv", test_resize_argv);
+  g_test_add_func ("/Ptyxis/MachineUtil/vm-stop-args", test_vm_stop_args);
+  g_test_add_func ("/Ptyxis/MachineUtil/vm-needs-stop", test_vm_needs_stop);
+  g_test_add_func ("/Ptyxis/MachineUtil/can-resize", test_can_resize);
+  g_test_add_func ("/Ptyxis/MachineUtil/disk-can-grow", test_disk_can_grow);
+  g_test_add_func ("/Ptyxis/MachineUtil/is-valid-disk-size", test_is_valid_disk_size);
+  g_test_add_func ("/Ptyxis/MachineUtil/suggest-disk-size", test_suggest_disk_size);
+  g_test_add_func ("/Ptyxis/MachineUtil/requests", test_requests);
 
   return g_test_run ();
 }

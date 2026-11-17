@@ -151,8 +151,10 @@ ptyxis_machines_impl_list_cb (GObject      *object,
   PtyxisNslProvider *provider = (PtyxisNslProvider *)object;
   g_autoptr(GDBusMethodInvocation) invocation = user_data;
   g_autoptr(GPtrArray) machines = NULL;
+  g_autoptr(GPtrArray) vms = NULL;
   g_autoptr(GError) error = NULL;
   GVariantBuilder builder;
+  GVariantBuilder vms_builder;
   PtyxisIpcMachines *self;
 
   g_assert (PTYXIS_IS_NSL_PROVIDER (provider));
@@ -160,7 +162,7 @@ ptyxis_machines_impl_list_cb (GObject      *object,
 
   self = g_object_get_data (G_OBJECT (invocation), "PTYXIS_IPC_MACHINES");
 
-  if (!(machines = ptyxis_nsl_provider_list_finish (provider, result, &error)))
+  if (!(machines = ptyxis_nsl_provider_list_finish (provider, result, &vms, &error)))
     {
       g_dbus_method_invocation_return_gerror (g_steal_pointer (&invocation), error);
       return;
@@ -181,9 +183,30 @@ ptyxis_machines_impl_list_cb (GObject      *object,
       g_variant_builder_close (&builder);
     }
 
+  /* A size nsl did not report is left out rather than sent as 0, so that
+   * clients can tell the two apart.
+   */
+  g_variant_builder_init (&vms_builder, G_VARIANT_TYPE ("aa{sv}"));
+
+  for (guint i = 0; i < vms->len; i++)
+    {
+      const PtyxisNslVm *vm = g_ptr_array_index (vms, i);
+
+      g_variant_builder_open (&vms_builder, G_VARIANT_TYPE ("a{sv}"));
+      g_variant_builder_add (&vms_builder, "{sv}", "name", g_variant_new_string (vm->name));
+      g_variant_builder_add (&vms_builder, "{sv}", "role", g_variant_new_string (vm->role ? vm->role : ""));
+      g_variant_builder_add (&vms_builder, "{sv}", "state", g_variant_new_string (vm->state ? vm->state : ""));
+
+      if (vm->data_disk_gib > 0)
+        g_variant_builder_add (&vms_builder, "{sv}", "data_disk_gib", g_variant_new_int64 (vm->data_disk_gib));
+
+      g_variant_builder_close (&vms_builder);
+    }
+
   ptyxis_ipc_machines_complete_list (self,
                                      g_steal_pointer (&invocation),
-                                     g_variant_builder_end (&builder));
+                                     g_variant_builder_end (&builder),
+                                     g_variant_builder_end (&vms_builder));
 }
 
 static gboolean

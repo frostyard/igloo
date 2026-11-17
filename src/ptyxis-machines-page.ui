@@ -301,6 +301,21 @@
           </object>
         </child>
         <child>
+          <object class="AdwActionRow" id="shared_disk_row">
+            <property name="title" translatable="yes">Grow the Shared VM’s Disk…</property>
+            <property name="subtitle" translatable="yes">nsl did not report the size of the data disk</property>
+            <property name="activatable">true</property>
+            <property name="sensitive">false</property>
+            <property name="action-name">machines.host-resize</property>
+            <child type="suffix">
+              <object class="GtkImage">
+                <property name="icon-name">go-next-symbolic</property>
+                <property name="accessible-role">presentation</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
           <object class="AdwActionRow">
             <property name="title" translatable="yes">Recover the Shared VM…</property>
             <property name="subtitle" translatable="yes">Run nsl recover to restart the shared VM from a fresh root; machines are kept</property>

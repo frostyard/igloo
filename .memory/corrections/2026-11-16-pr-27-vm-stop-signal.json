@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-16",
+  "scope": "agent/ptyxis-nsl-provider.c",
+  "correction": "Belief: a VM's runtime directory under /run/user/UID/nsl appears and disappears with the VM, so the file monitor reports a stop. Reality: nsl creates it on the first start and never removes it, so no Changed arrives when an isolated VM powers off about a minute after its last machine stops; the stop comes as an ActiveState change of the transient user unit nsl-UID-vm-ID.service",
+  "evidence": "frostyard/igloo#27 cross-review (openai/gpt-6.1-sol) of head e933281, finding 2",
+  "promoted_to": "testsuite/test-nsl.c (tests: /Ptyxis/Nsl/vm-unit-path, /Ptyxis/Nsl/vm-unit-stopped)"
+}

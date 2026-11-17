@@ -33,6 +33,11 @@
 #define NSL_INSTALL_URI "https://frostyard.github.io/nsl/getting-started/install/"
 #define SAVE_DELAY_MSEC 600
 
+/* nsl powers an isolated VM off about a minute after its last machine
+ * stopped; this allows it longer, because a busy machine can hold it.
+ */
+#define RESIZE_WAIT_SECONDS 150
+
 struct _PtyxisMachinesPage
 {
   AdwPreferencesPage   parent_instance;
@@ -40,9 +45,15 @@ struct _PtyxisMachinesPage
   PtyxisIpcMachines   *proxy;
   GCancellable        *cancellable;
   GVariant            *machines;
+  GVariant            *vms;
   GHashTable          *pending_settings;
   guint                save_source;
   guint                busy;
+  guint                resize_timeout;
+  char                *resize_name;
+  gint64               resize_gib;
+  guint                resize_generation;
+  PtyxisMachineRequests requests;
 
   AdwPreferencesGroup *missing_group;
   AdwPreferencesGroup *machines_group;
@@ -50,6 +61,7 @@ struct _PtyxisMachinesPage
   AdwPreferencesGroup *host_group;
   GtkListBox          *machines_list_box;
   GtkLabel            *placeholder_label;
+  AdwActionRow        *shared_disk_row;
   AdwSpinner          *spinner;
   AdwActionRow        *version_row;
   AdwSpinRow          *vm_memory;
@@ -60,6 +72,7 @@ struct _PtyxisMachinesPage
   AdwSpinRow          *isolated_cpus;
 
   guint                loading_settings : 1;
+  guint                resize_pending : 1;
 };
 
 static const struct {
@@ -77,6 +90,7 @@ static const struct {
 G_DEFINE_FINAL_TYPE (PtyxisMachinesPage, ptyxis_machines_page, ADW_TYPE_PREFERENCES_PAGE)
 
 static void ptyxis_machines_page_reload (PtyxisMachinesPage *self);
+static void ptyxis_machines_page_check_pending_resize (PtyxisMachinesPage *self);
 
 static GtkWidget *
 setting_widget (PtyxisMachinesPage *self,
@@ -194,6 +208,59 @@ dup_machine_state (PtyxisMachinesPage *self,
   return NULL;
 }
 
+/* Finds a VM of the last list: the shared VM when @name is %NULL, else the
+ * VM of the isolated machine @name. Matching the role keeps an isolated
+ * machine that is called "shared" apart from the shared VM. Sizes of VMs
+ * nsl does not list, or does not size, are 0.
+ */
+static gboolean
+lookup_vm (PtyxisMachinesPage *self,
+           const char         *name,
+           char              **state,
+           gint64             *data_disk_gib)
+{
+  const char *role = name ? "isolated" : "shared";
+  GVariantIter iter;
+  GVariant *dict;
+
+  if (state != NULL)
+    *state = NULL;
+
+  if (data_disk_gib != NULL)
+    *data_disk_gib = 0;
+
+  if (self->vms == NULL)
+    return FALSE;
+
+  g_variant_iter_init (&iter, self->vms);
+
+  while ((dict = g_variant_iter_next_value (&iter)))
+    {
+      const char *value = NULL;
+      const char *vm_role = NULL;
+
+      if (g_variant_lookup (dict, "role", "&s", &vm_role) &&
+          g_strcmp0 (vm_role, role) == 0 &&
+          (name == NULL ||
+           (g_variant_lookup (dict, "name", "&s", &value) && g_strcmp0 (value, name) == 0)))
+        {
+          if (state != NULL && g_variant_lookup (dict, "state", "&s", &value))
+            *state = g_strdup (value);
+
+          if (data_disk_gib != NULL)
+            g_variant_lookup (dict, "data_disk_gib", "x", data_disk_gib);
+
+          g_variant_unref (dict);
+
+          return TRUE;
+        }
+
+      g_variant_unref (dict);
+    }
+
+  return FALSE;
+}
+
 static const char *
 state_label (const char *state)
 {
@@ -225,6 +292,7 @@ create_machine_row (PtyxisMachinesPage *self,
   const char *state = "";
   const char *image = "";
   const char *tier = "";
+  gint64 data_disk_gib = 0;
   gboolean is_default = FALSE;
   gboolean usable;
   gboolean running;
@@ -241,11 +309,24 @@ create_machine_row (PtyxisMachinesPage *self,
   usable = g_strcmp0 (state, "incomplete") != 0 && g_strcmp0 (state, "removing") != 0;
   running = g_strcmp0 (state, "running") == 0;
 
+  /* An isolated machine runs in a VM of its own, whose data disk nsl sizes */
+  if (g_strcmp0 (tier, "isolated") == 0)
+    lookup_vm (self, name, NULL, &data_disk_gib);
+
   description = ptyxis_machine_describe_image (image);
   g_string_append (subtitle, description);
   if (g_strcmp0 (tier, "isolated") == 0)
     g_string_append_printf (subtitle, " · %s", _("Isolated"));
   g_string_append_printf (subtitle, " · %s", state_label (state));
+
+  if (data_disk_gib > 0)
+    {
+      g_string_append (subtitle, " · ");
+      /* translators: %" G_GINT64_FORMAT " is a data disk size in GiB, such
+       * as 128
+       */
+      g_string_append_printf (subtitle, _("%" G_GINT64_FORMAT " GiB disk"), data_disk_gib);
+    }
 
   row = adw_action_row_new ();
   adw_preferences_row_set_use_markup (ADW_PREFERENCES_ROW (row), FALSE);
@@ -306,6 +387,13 @@ create_machine_row (PtyxisMachinesPage *self,
       detailed = g_strdup_printf ("machines.export('%s')", name);
       g_menu_append (config_section, _("_Export…"), detailed);
       g_clear_pointer (&detailed, g_free);
+
+      if (ptyxis_machine_can_resize (tier, state, data_disk_gib))
+        {
+          detailed = g_strdup_printf ("machines.resize('%s')", name);
+          g_menu_append (config_section, _("Grow _Disk…"), detailed);
+          g_clear_pointer (&detailed, g_free);
+        }
     }
 
   if (usable)
@@ -341,9 +429,38 @@ create_machine_row (PtyxisMachinesPage *self,
   return row;
 }
 
+/* The Host group shows the size of the shared VM's data disk, and offers to
+ * grow it while nsl can.
+ */
+static void
+ptyxis_machines_page_update_shared_disk (PtyxisMachinesPage *self)
+{
+  g_autofree char *subtitle = NULL;
+  gint64 data_disk_gib = 0;
+
+  g_assert (PTYXIS_IS_MACHINES_PAGE (self));
+
+  lookup_vm (self, NULL, NULL, &data_disk_gib);
+
+  if (data_disk_gib >= PTYXIS_MACHINE_MAX_DISK_GIB)
+    subtitle = g_strdup (_("The data disk has the largest size nsl supports"));
+  else if (data_disk_gib > 0)
+    /* translators: %" G_GINT64_FORMAT " is a data disk size in GiB, such as
+     * 128
+     */
+    subtitle = g_strdup_printf (_("The shared VM’s data disk has %" G_GINT64_FORMAT " GiB"), data_disk_gib);
+  else
+    subtitle = g_strdup (_("nsl did not report the size of the data disk"));
+
+  adw_action_row_set_subtitle (self->shared_disk_row, subtitle);
+  gtk_widget_set_sensitive (GTK_WIDGET (self->shared_disk_row),
+                            ptyxis_machine_disk_can_grow (data_disk_gib));
+}
+
 static void
 ptyxis_machines_page_set_machines (PtyxisMachinesPage *self,
-                                   GVariant           *machines)
+                                   GVariant           *machines,
+                                   GVariant           *vms)
 {
   GVariantIter iter;
   GVariant *dict;
@@ -351,12 +468,20 @@ ptyxis_machines_page_set_machines (PtyxisMachinesPage *self,
   g_assert (PTYXIS_IS_MACHINES_PAGE (self));
 
   /* Keep rows, and any open menu, when nothing changed */
-  if (self->machines != NULL && machines != NULL && g_variant_equal (self->machines, machines))
+  if (self->machines != NULL && machines != NULL &&
+      self->vms != NULL && vms != NULL &&
+      g_variant_equal (self->machines, machines) &&
+      g_variant_equal (self->vms, vms))
     return;
 
   g_clear_pointer (&self->machines, g_variant_unref);
+  g_clear_pointer (&self->vms, g_variant_unref);
+
   if (machines != NULL)
     self->machines = g_variant_ref_sink (machines);
+
+  if (vms != NULL)
+    self->vms = g_variant_ref_sink (vms);
 
   /* Remove only rows: the placeholder is a child of the list too, and
    * gtk_list_box_remove_all() would remove it as well.
@@ -370,6 +495,8 @@ ptyxis_machines_page_set_machines (PtyxisMachinesPage *self,
 
       child = next;
     }
+
+  ptyxis_machines_page_update_shared_disk (self);
 
   if (self->machines == NULL)
     return;
@@ -391,12 +518,13 @@ ptyxis_machines_page_list_cb (GObject      *object,
   PtyxisIpcMachines *proxy = (PtyxisIpcMachines *)object;
   g_autoptr(PtyxisMachinesPage) self = user_data;
   g_autoptr(GVariant) machines = NULL;
+  g_autoptr(GVariant) vms = NULL;
   g_autoptr(GError) error = NULL;
 
   g_assert (PTYXIS_IPC_IS_MACHINES (proxy));
   g_assert (PTYXIS_IS_MACHINES_PAGE (self));
 
-  if (!ptyxis_ipc_machines_call_list_finish (proxy, &machines, result, &error))
+  if (!ptyxis_ipc_machines_call_list_finish (proxy, &machines, &vms, result, &error))
     {
       g_autofree char *message = NULL;
 
@@ -409,7 +537,7 @@ ptyxis_machines_page_list_cb (GObject      *object,
       gtk_label_set_label (self->placeholder_label, message);
 
       /* Rows would show stale states; the placeholder shows the error */
-      ptyxis_machines_page_set_machines (self, NULL);
+      ptyxis_machines_page_set_machines (self, NULL, NULL);
 
       return;
     }
@@ -417,7 +545,10 @@ ptyxis_machines_page_list_cb (GObject      *object,
   ptyxis_machines_page_set_busy (self, FALSE);
 
   gtk_label_set_label (self->placeholder_label, _("No Machines"));
-  ptyxis_machines_page_set_machines (self, machines);
+  ptyxis_machines_page_set_machines (self, machines, vms);
+
+  /* A growth that waits for the VM to stop finishes with this list */
+  ptyxis_machines_page_check_pending_resize (self);
 }
 
 static void
@@ -1513,6 +1644,386 @@ ptyxis_machines_page_recover_action (GtkWidget  *widget,
   adw_dialog_present (alert, GTK_WIDGET (self));
 }
 
+/* Ends a wait for a VM to stop, if one is running, and clears the spinner of
+ * the command that started it.
+ */
+static void
+ptyxis_machines_page_end_resize_wait (PtyxisMachinesPage *self)
+{
+  g_assert (PTYXIS_IS_MACHINES_PAGE (self));
+
+  if (!self->resize_pending)
+    return;
+
+  self->resize_pending = FALSE;
+  g_clear_handle_id (&self->resize_timeout, g_source_remove);
+  g_clear_pointer (&self->resize_name, g_free);
+  self->resize_gib = 0;
+  self->resize_generation = 0;
+
+  ptyxis_machines_page_set_busy (self, FALSE);
+}
+
+/* Runs the growth in a terminal. nsl refuses a size for a VM that runs, and
+ * says so there.
+ */
+static void
+ptyxis_machines_page_present_resize (PtyxisMachinesPage *self,
+                                     const char         *name,
+                                     gint64              gib)
+{
+  g_autofree char *title = NULL;
+  g_autofree char *running = NULL;
+  g_autofree char *succeeded = NULL;
+  g_autofree char *failed = NULL;
+  g_auto(GStrv) argv = NULL;
+  PtyxisMachineCommandDialog *dialog;
+  const char *path;
+
+  g_assert (PTYXIS_IS_MACHINES_PAGE (self));
+
+  if (!(path = nsl_path (self)) ||
+      !(argv = ptyxis_machine_resize_argv (path, name, gib)))
+    return;
+
+  if (name != NULL)
+    /* translators: %s is a machine name */
+    title = g_strdup_printf (_("Growing the Disk of %s"), name);
+  else
+    title = g_strdup (_("Growing the Shared VM’s Disk"));
+
+  /* translators: %" G_GINT64_FORMAT " is a data disk size in GiB, such as
+   * 128
+   */
+  running = g_strdup_printf (_("Growing the data disk to %" G_GINT64_FORMAT " GiB…"), gib);
+  /* translators: %" G_GINT64_FORMAT " is a data disk size in GiB, such as
+   * 128
+   */
+  succeeded = g_strdup_printf (_("The data disk has %" G_GINT64_FORMAT " GiB. The VM grows its file system the next time it starts."), gib);
+  failed = g_strdup (_("Could not grow the data disk"));
+
+  dialog = ptyxis_machines_page_present_command (self, title, (const char * const *)argv);
+  ptyxis_machine_command_dialog_set_messages (dialog, running, succeeded, failed);
+}
+
+static gboolean
+ptyxis_machines_page_resize_timeout_cb (gpointer user_data)
+{
+  PtyxisMachinesPage *self = PTYXIS_MACHINES_PAGE (user_data);
+  g_autofree char *name = NULL;
+  g_autofree char *body = NULL;
+
+  g_assert (PTYXIS_IS_MACHINES_PAGE (self));
+
+  self->resize_timeout = 0;
+
+  /* A newer request owns the wait now; its timeout is another source */
+  if (!ptyxis_machine_requests_is_current (&self->requests, self->resize_generation))
+    return G_SOURCE_REMOVE;
+
+  name = g_steal_pointer (&self->resize_name);
+
+  if (name != NULL)
+    /* translators: %s is a machine name */
+    body = g_strdup_printf (_("The VM of %s is still running. nsl stops an isolated VM about a minute after its last machine stops, unless something still uses it. Choose Grow Disk… again when the VM has stopped."), name);
+  else
+    body = g_strdup (_("The shared VM is still running. Choose Shut Down All Machines, then Grow the Shared VM’s Disk… again."));
+
+  ptyxis_machines_page_end_resize_wait (self);
+  ptyxis_machines_page_show_error (self, _("Could not grow the disk"), body);
+
+  return G_SOURCE_REMOVE;
+}
+
+/* Waits for the list to show the VM stopped. The agent emits Changed when a
+ * VM's runtime directory goes away, so this needs no timer of its own.
+ */
+static void
+ptyxis_machines_page_start_resize_wait (PtyxisMachinesPage *self,
+                                        const char         *name,
+                                        gint64              gib,
+                                        guint               generation)
+{
+  g_assert (PTYXIS_IS_MACHINES_PAGE (self));
+
+  /* 1 wait at a time: a second request replaces the first */
+  ptyxis_machines_page_end_resize_wait (self);
+
+  self->resize_pending = TRUE;
+  self->resize_name = g_strdup (name);
+  self->resize_gib = gib;
+  self->resize_generation = generation;
+  self->resize_timeout = g_timeout_add_seconds (RESIZE_WAIT_SECONDS,
+                                               ptyxis_machines_page_resize_timeout_cb,
+                                               self);
+
+  ptyxis_machines_page_set_busy (self, TRUE);
+  ptyxis_machines_page_toast (self, _("Waiting for the VM to stop…"));
+  ptyxis_machines_page_reload_machines (self);
+}
+
+static void
+ptyxis_machines_page_check_pending_resize (PtyxisMachinesPage *self)
+{
+  g_autofree char *name = NULL;
+  g_autofree char *state = NULL;
+  gint64 gib;
+
+  g_assert (PTYXIS_IS_MACHINES_PAGE (self));
+
+  if (!self->resize_pending ||
+      !ptyxis_machine_requests_is_current (&self->requests, self->resize_generation))
+    return;
+
+  /* NULL is the shared VM, for the list and for nsl resize alike */
+  name = g_strdup (self->resize_name);
+  gib = self->resize_gib;
+
+  if (!lookup_vm (self, name, &state, NULL))
+    {
+      ptyxis_machines_page_end_resize_wait (self);
+      ptyxis_machines_page_show_error (self,
+                                       _("Could not grow the disk"),
+                                       _("nsl does not list the VM of the machine. Check the machines and grow the disk again."));
+      return;
+    }
+
+  if (ptyxis_machine_vm_needs_stop (state))
+    return;
+
+  ptyxis_machines_page_end_resize_wait (self);
+  ptyxis_machines_page_present_resize (self, name, gib);
+}
+
+typedef struct
+{
+  PtyxisMachinesPage *self;
+  char               *name;
+  gint64              gib;
+  guint               generation;
+} ResizeState;
+
+static void
+resize_state_free (ResizeState *state)
+{
+  g_clear_object (&state->self);
+  g_clear_pointer (&state->name, g_free);
+  g_free (state);
+}
+
+static void
+ptyxis_machines_page_resize_stop_cb (GObject      *object,
+                                     GAsyncResult *result,
+                                     gpointer      user_data)
+{
+  PtyxisIpcMachines *proxy = (PtyxisIpcMachines *)object;
+  ResizeState *state = user_data;
+  PtyxisMachinesPage *self = state->self;
+  g_autoptr(GError) error = NULL;
+  g_autofree char *output = NULL;
+  int exit_code = 0;
+
+  g_assert (PTYXIS_IPC_IS_MACHINES (proxy));
+  g_assert (PTYXIS_IS_MACHINES_PAGE (self));
+
+  if (!ptyxis_ipc_machines_call_run_finish (proxy, &exit_code, &output, result, &error) &&
+      g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+    {
+      resize_state_free (state);
+      return;
+    }
+
+  ptyxis_machines_page_set_busy (self, FALSE);
+
+  /* A newer request replaced this one: its answer says nothing about it */
+  if (!ptyxis_machine_requests_is_current (&self->requests, state->generation))
+    {
+      resize_state_free (state);
+      return;
+    }
+
+  if (error != NULL)
+    {
+      g_dbus_error_strip_remote_error (error);
+      ptyxis_machines_page_show_error (self, _("Could not stop the VM"), error->message);
+    }
+  else if (exit_code != 0)
+    {
+      ptyxis_machines_page_show_error (self, _("Could not stop the VM"),
+                                       output ? g_strstrip (output) : "");
+    }
+  else
+    {
+      ptyxis_machines_page_start_resize_wait (self, state->name, state->gib, state->generation);
+    }
+
+  resize_state_free (state);
+}
+
+/* Stops the VM of @name, or every machine and VM for the shared VM, and then
+ * waits for the list to show it stopped.
+ */
+static void
+ptyxis_machines_page_stop_for_resize (PtyxisMachinesPage *self,
+                                      const char         *name,
+                                      gint64              gib,
+                                      guint               generation)
+{
+  g_auto(GStrv) args = NULL;
+  ResizeState *state;
+
+  g_assert (PTYXIS_IS_MACHINES_PAGE (self));
+
+  if (self->proxy == NULL || !(args = ptyxis_machine_vm_stop_args (name)))
+    return;
+
+  state = g_new0 (ResizeState, 1);
+  state->self = g_object_ref (self);
+  state->name = g_strdup (name);
+  state->gib = gib;
+  state->generation = generation;
+
+  ptyxis_machines_page_set_busy (self, TRUE);
+  ptyxis_ipc_machines_call_run (self->proxy,
+                                (const char * const *)args,
+                                self->cancellable,
+                                ptyxis_machines_page_resize_stop_cb,
+                                state);
+}
+
+static void
+ptyxis_machines_page_resize_response_cb (AdwAlertDialog *alert,
+                                         const char     *response,
+                                         gpointer        user_data)
+{
+  PtyxisMachinesPage *self = PTYXIS_MACHINES_PAGE (user_data);
+  const char *name = g_object_get_data (G_OBJECT (alert), "MACHINE_NAME");
+  GtkWidget *spin = g_object_get_data (G_OBJECT (alert), "RESIZE_SPIN");
+  gint64 current = GPOINTER_TO_INT (g_object_get_data (G_OBJECT (alert), "RESIZE_GIB"));
+  gboolean needs_stop = GPOINTER_TO_INT (g_object_get_data (G_OBJECT (alert), "RESIZE_NEEDS_STOP"));
+  gint64 target;
+  guint generation;
+
+  g_assert (PTYXIS_IS_MACHINES_PAGE (self));
+
+  if (g_strcmp0 (response, "grow") != 0 || !ADW_IS_SPIN_ROW (spin))
+    return;
+
+  target = (gint64)adw_spin_row_get_value (ADW_SPIN_ROW (spin));
+
+  /* nsl grows a disk but never shrinks it */
+  if (!ptyxis_machine_is_valid_disk_size (current, target))
+    return;
+
+  /* Every accepted request replaces the one before it: end its wait, and let
+   * the answers of the commands it started fall away.
+   */
+  ptyxis_machines_page_end_resize_wait (self);
+
+  generation = ptyxis_machine_requests_begin (&self->requests);
+
+  if (!needs_stop)
+    ptyxis_machines_page_present_resize (self, name, target);
+  else
+    ptyxis_machines_page_stop_for_resize (self, name, target, generation);
+}
+
+static void
+ptyxis_machines_page_resize_action (GtkWidget  *widget,
+                                    const char *action_name,
+                                    GVariant   *param)
+{
+  PtyxisMachinesPage *self = (PtyxisMachinesPage *)widget;
+  const char *name = param ? g_variant_get_string (param, NULL) : NULL;
+  g_autofree char *state = NULL;
+  g_autofree char *heading = NULL;
+  g_autofree char *body = NULL;
+  g_autofree char *paragraph = NULL;
+  g_autofree char *text = NULL;
+  GtkWidget *list;
+  GtkWidget *spin;
+  AdwDialog *alert;
+  gint64 data_disk_gib = 0;
+  gboolean needs_stop;
+
+  g_assert (PTYXIS_IS_MACHINES_PAGE (self));
+
+  lookup_vm (self, name, &state, &data_disk_gib);
+
+  if (!ptyxis_machine_disk_can_grow (data_disk_gib))
+    {
+      ptyxis_machines_page_show_error (self,
+                                       _("Could not grow the disk"),
+                                       _("nsl did not report the size of the data disk, or it has the largest size nsl supports."));
+      return;
+    }
+
+  needs_stop = ptyxis_machine_vm_needs_stop (state);
+
+  if (name != NULL)
+    /* translators: %s is a machine name */
+    heading = g_strdup_printf (_("Grow the Disk of %s?"), name);
+  else
+    heading = g_strdup (_("Grow the Shared VM’s Disk?"));
+
+  /* translators: %" G_GINT64_FORMAT " is a data disk size in GiB, such as
+   * 128
+   */
+  body = g_strdup_printf (_("The data disk has %" G_GINT64_FORMAT " GiB. nsl can grow a data disk but never shrinks it, so choose the size with care. Files in the machines are kept."), data_disk_gib);
+
+  if (!needs_stop)
+    paragraph = g_strdup (_("The VM is stopped."));
+  else if (name != NULL)
+    /* translators: %s is a machine name */
+    paragraph = g_strdup_printf (_("The VM of %s is running. Igloo first stops %s; nsl powers its VM off about a minute later, and then the disk grows. Programs running in %s will close."), name, name, name);
+  else
+    paragraph = g_strdup (_("The shared VM is running. Igloo first runs nsl shutdown, which stops every machine and every nsl VM, isolated ones included. Programs running in them will close."));
+
+  text = g_strdup_printf ("%s\n\n%s", body, paragraph);
+
+  /* gtk_adjustment_new() returns a floating reference that the row sinks;
+   * holding it here and unrefing it at return would free the row's adjustment
+   * (AGENTS.md: Floating references).
+   */
+  spin = adw_spin_row_new (gtk_adjustment_new ((double)ptyxis_machine_suggest_disk_size (data_disk_gib),
+                                               data_disk_gib + 1,
+                                               PTYXIS_MACHINE_MAX_DISK_GIB,
+                                               1, 16, 0),
+                           0, 0);
+  adw_preferences_row_set_title (ADW_PREFERENCES_ROW (spin), _("New Size"));
+  adw_action_row_set_subtitle (ADW_ACTION_ROW (spin), _("GiB"));
+
+  list = gtk_list_box_new ();
+  gtk_list_box_set_selection_mode (GTK_LIST_BOX (list), GTK_SELECTION_NONE);
+  gtk_widget_add_css_class (list, "boxed-list");
+  gtk_list_box_append (GTK_LIST_BOX (list), spin);
+
+  alert = adw_alert_dialog_new (heading, NULL);
+  adw_alert_dialog_set_body (ADW_ALERT_DIALOG (alert), text);
+  adw_alert_dialog_set_extra_child (ADW_ALERT_DIALOG (alert), list);
+  adw_alert_dialog_add_responses (ADW_ALERT_DIALOG (alert),
+                                  "cancel", _("_Cancel"),
+                                  "grow", needs_stop ? _("_Stop and Grow") : _("_Grow Disk"),
+                                  NULL);
+  adw_alert_dialog_set_response_appearance (ADW_ALERT_DIALOG (alert), "grow",
+                                            needs_stop ? ADW_RESPONSE_DESTRUCTIVE
+                                                       : ADW_RESPONSE_SUGGESTED);
+  adw_alert_dialog_set_default_response (ADW_ALERT_DIALOG (alert), "cancel");
+  adw_alert_dialog_set_close_response (ADW_ALERT_DIALOG (alert), "cancel");
+  g_object_set_data_full (G_OBJECT (alert), "MACHINE_NAME", g_strdup (name), g_free);
+  g_object_set_data (G_OBJECT (alert), "RESIZE_GIB", GINT_TO_POINTER ((int)data_disk_gib));
+  g_object_set_data (G_OBJECT (alert), "RESIZE_NEEDS_STOP", GINT_TO_POINTER (needs_stop ? 1 : 0));
+  g_object_set_data_full (G_OBJECT (alert), "RESIZE_SPIN", g_object_ref (spin), g_object_unref);
+
+  g_signal_connect_object (alert,
+                           "response",
+                           G_CALLBACK (ptyxis_machines_page_resize_response_cb),
+                           self,
+                           0);
+
+  adw_dialog_present (alert, GTK_WIDGET (self));
+}
+
 static void
 ptyxis_machines_page_update_action (GtkWidget  *widget,
                                     const char *action_name,
@@ -1680,6 +2191,8 @@ ptyxis_machines_page_dispose (GObject *object)
 
   g_cancellable_cancel (self->cancellable);
   g_clear_handle_id (&self->save_source, g_source_remove);
+  g_clear_handle_id (&self->resize_timeout, g_source_remove);
+  g_clear_pointer (&self->resize_name, g_free);
 
   if (self->proxy != NULL)
     g_signal_handlers_disconnect_by_data (self->proxy, self);
@@ -1698,6 +2211,7 @@ ptyxis_machines_page_finalize (GObject *object)
 
   g_clear_object (&self->cancellable);
   g_clear_pointer (&self->machines, g_variant_unref);
+  g_clear_pointer (&self->vms, g_variant_unref);
   g_clear_pointer (&self->pending_settings, g_hash_table_unref);
 
   G_OBJECT_CLASS (ptyxis_machines_page_parent_class)->finalize (object);
@@ -1725,6 +2239,7 @@ ptyxis_machines_page_class_init (PtyxisMachinesPageClass *klass)
   gtk_widget_class_bind_template_child (widget_class, PtyxisMachinesPage, missing_group);
   gtk_widget_class_bind_template_child (widget_class, PtyxisMachinesPage, placeholder_label);
   gtk_widget_class_bind_template_child (widget_class, PtyxisMachinesPage, settings_group);
+  gtk_widget_class_bind_template_child (widget_class, PtyxisMachinesPage, shared_disk_row);
   gtk_widget_class_bind_template_child (widget_class, PtyxisMachinesPage, spinner);
   gtk_widget_class_bind_template_child (widget_class, PtyxisMachinesPage, version_row);
   gtk_widget_class_bind_template_child (widget_class, PtyxisMachinesPage, vm_cpus);
@@ -1737,8 +2252,10 @@ ptyxis_machines_page_class_init (PtyxisMachinesPageClass *klass)
   gtk_widget_class_install_action (widget_class, "machines.doctor", NULL, ptyxis_machines_page_doctor_action);
   gtk_widget_class_install_action (widget_class, "machines.host-logs", NULL, ptyxis_machines_page_logs_action);
   gtk_widget_class_install_action (widget_class, "machines.host-recover", NULL, ptyxis_machines_page_recover_action);
+  gtk_widget_class_install_action (widget_class, "machines.host-resize", NULL, ptyxis_machines_page_resize_action);
   gtk_widget_class_install_action (widget_class, "machines.logs", "s", ptyxis_machines_page_logs_action);
   gtk_widget_class_install_action (widget_class, "machines.recover", "s", ptyxis_machines_page_recover_action);
+  gtk_widget_class_install_action (widget_class, "machines.resize", "s", ptyxis_machines_page_resize_action);
   gtk_widget_class_install_action (widget_class, "machines.update", NULL, ptyxis_machines_page_update_action);
   gtk_widget_class_install_action (widget_class, "machines.shutdown", NULL, ptyxis_machines_page_shutdown_action);
   gtk_widget_class_install_action (widget_class, "machines.install-guide", NULL, ptyxis_machines_page_install_guide_action);

@@ -133,6 +133,192 @@ ptyxis_machine_remove_argv (const char *nsl,
   return g_strdupv ((char **)remove);
 }
 
+/**
+ * ptyxis_machine_disk_can_grow:
+ * @data_disk_gib: the size of a VM data disk, or 0 when nsl did not report it
+ *
+ * nsl grows a data disk from at least 1 GiB to at most 4096 GiB, and 0
+ * means the size is unknown.
+ *
+ * Returns: whether a data disk of this size can grow
+ */
+gboolean
+ptyxis_machine_disk_can_grow (gint64 data_disk_gib)
+{
+  return data_disk_gib > 0 && data_disk_gib < PTYXIS_MACHINE_MAX_DISK_GIB;
+}
+
+/**
+ * ptyxis_machine_can_resize:
+ * @tier: (nullable): a machine tier
+ * @state: (nullable): a machine state
+ * @data_disk_gib: the size of the machine's VM data disk, or 0 when unknown
+ *
+ * Returns: whether the machine has its own VM with a data disk that can grow
+ */
+gboolean
+ptyxis_machine_can_resize (const char *tier,
+                           const char *state,
+                           gint64      data_disk_gib)
+{
+  return g_strcmp0 (tier, "isolated") == 0 &&
+         g_strcmp0 (state, "incomplete") != 0 &&
+         g_strcmp0 (state, "removing") != 0 &&
+         ptyxis_machine_disk_can_grow (data_disk_gib);
+}
+
+/**
+ * ptyxis_machine_is_valid_disk_size:
+ * @current: the size of a data disk now, or 0 when unknown
+ * @target: the size asked for
+ *
+ * nsl grows a data disk but never shrinks it.
+ *
+ * Returns: whether nsl accepts @target for a disk of size @current
+ */
+gboolean
+ptyxis_machine_is_valid_disk_size (gint64 current,
+                                   gint64 target)
+{
+  return current > 0 &&
+         target > current &&
+         target <= PTYXIS_MACHINE_MAX_DISK_GIB;
+}
+
+/**
+ * ptyxis_machine_suggest_disk_size:
+ * @current: the size of a data disk now, or 0 when unknown
+ *
+ * Returns: twice @current, or 0 when the size is unknown, at most
+ *   %PTYXIS_MACHINE_MAX_DISK_GIB
+ */
+gint64
+ptyxis_machine_suggest_disk_size (gint64 current)
+{
+  if (current <= 0)
+    return 0;
+
+  return MIN (current * 2, PTYXIS_MACHINE_MAX_DISK_GIB);
+}
+
+/**
+ * ptyxis_machine_vm_needs_stop:
+ * @vm_state: (nullable): a VM state from `nsl list --json`
+ *
+ * nsl grows a data disk only while its VM is stopped or failed.
+ *
+ * Returns: whether the VM must stop before its data disk can grow
+ */
+gboolean
+ptyxis_machine_vm_needs_stop (const char *vm_state)
+{
+  return g_strcmp0 (vm_state, "stopped") != 0 &&
+         g_strcmp0 (vm_state, "failed") != 0;
+}
+
+/**
+ * ptyxis_machine_vm_stop_args:
+ * @name: (nullable): an isolated machine name, or NULL to stop every VM
+ *
+ * Stops the VM of @name, or every machine and every nsl VM when @name is
+ * NULL. The arguments go to the agent's Machines.Run method, which runs nsl
+ * on the host, so they start with the command.
+ *
+ * Returns: (transfer full) (nullable) (array zero-terminated=1): arguments
+ *   for nsl, or NULL when @name is not a valid machine name
+ */
+char **
+ptyxis_machine_vm_stop_args (const char *name)
+{
+  const char * const shutdown_args[] = { "shutdown", NULL };
+  const char * const stop_args[] = { "stop", name, NULL };
+
+  if (name == NULL)
+    return g_strdupv ((char **)shutdown_args);
+
+  if (!ptyxis_machine_is_valid_name (name))
+    return NULL;
+
+  return g_strdupv ((char **)stop_args);
+}
+
+/**
+ * ptyxis_machine_resize_argv:
+ * @nsl: the path to nsl
+ * @name: (nullable): an isolated machine name, or NULL for the shared VM
+ * @gib: the new size of the data disk in GiB
+ *
+ * Returns: (transfer full) (nullable) (array zero-terminated=1): arguments
+ *   for nsl resize, or NULL when an argument is not acceptable
+ */
+char **
+ptyxis_machine_resize_argv (const char *nsl,
+                            const char *name,
+                            gint64      gib)
+{
+  g_autofree char *size = NULL;
+
+  if (nsl == NULL || gib < 1 || gib > PTYXIS_MACHINE_MAX_DISK_GIB)
+    return NULL;
+
+  if (name != NULL && !ptyxis_machine_is_valid_name (name))
+    return NULL;
+
+  size = g_strdup_printf ("%" G_GINT64_FORMAT, gib);
+
+  if (name == NULL)
+    {
+      const char * const shared[] = { nsl, "resize", "--disk", size, NULL };
+
+      return g_strdupv ((char **)shared);
+    }
+
+  {
+    const char * const isolated[] = { nsl, "resize", name, "--disk", size, NULL };
+
+    return g_strdupv ((char **)isolated);
+  }
+}
+
+/**
+ * ptyxis_machine_requests_begin:
+ * @self: a #PtyxisMachineRequests
+ *
+ * Starts a request. Its generation is newer than every generation before it,
+ * so answers to older requests are no longer current.
+ *
+ * Returns: the generation of this request
+ */
+guint
+ptyxis_machine_requests_begin (PtyxisMachineRequests *self)
+{
+  g_return_val_if_fail (self != NULL, 0);
+
+  ++self->generation;
+
+  /* 0 means no request ever began, so a wrapped counter must not become it */
+  if (self->generation == 0)
+    self->generation = 1;
+
+  return self->generation;
+}
+
+/**
+ * ptyxis_machine_requests_is_current:
+ * @self: a #PtyxisMachineRequests
+ * @generation: a generation an answer belongs to
+ *
+ * Returns: whether @generation is the newest request, and not 0
+ */
+gboolean
+ptyxis_machine_requests_is_current (const PtyxisMachineRequests *self,
+                                    guint                        generation)
+{
+  g_return_val_if_fail (self != NULL, FALSE);
+
+  return generation != 0 && self->generation == generation;
+}
+
 #define DOCUMENTS_BUS_NAME "org.freedesktop.portal.Documents"
 #define DOCUMENTS_OBJECT_PATH "/org/freedesktop/portal/documents"
 #define DOCUMENTS_INTERFACE "org.freedesktop.portal.Documents"

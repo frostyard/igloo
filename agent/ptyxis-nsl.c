@@ -44,6 +44,15 @@ ptyxis_nsl_machine_free (PtyxisNslMachine *machine)
 }
 
 void
+ptyxis_nsl_vm_free (PtyxisNslVm *vm)
+{
+  g_clear_pointer (&vm->name, g_free);
+  g_clear_pointer (&vm->role, g_free);
+  g_clear_pointer (&vm->state, g_free);
+  g_free (vm);
+}
+
+void
 ptyxis_nsl_image_free (PtyxisNslImage *image)
 {
   g_clear_pointer (&image->selectors, g_strfreev);
@@ -193,6 +202,181 @@ ptyxis_nsl_is_valid_name (const char *name)
   return TRUE;
 }
 
+/* nsl runs a VM as the transient user unit
+ * nsl-<owner uid>-vm-<32 hex ID>.service (nsl vm.go). Its ports and desktop
+ * forwarders are other units of the same VM, and must not count.
+ */
+static gboolean
+is_vm_unit_name (const char *name)
+{
+  const char *p = name;
+  const char *start;
+
+  if (!g_str_has_prefix (p, "nsl-"))
+    return FALSE;
+
+  p += strlen ("nsl-");
+  start = p;
+
+  while (g_ascii_isdigit (*p))
+    p++;
+
+  if (p == start || !g_str_has_prefix (p, "-vm-"))
+    return FALSE;
+
+  p += strlen ("-vm-");
+  start = p;
+
+  while (g_ascii_islower (*p) || g_ascii_isdigit (*p))
+    p++;
+
+  if (p == start)
+    return FALSE;
+
+  return g_strcmp0 (p, ".service") == 0;
+}
+
+/* systemd escapes every character outside [A-Za-z0-9] of a unit name to
+ * "_XX" in its object path, so "-" reads "_2d".
+ */
+static char *
+unescape_unit_path (const char *escaped)
+{
+  GString *out = g_string_sized_new (strlen (escaped));
+
+  for (const char *p = escaped; *p; p++)
+    {
+      if (p[0] == '_' && g_ascii_isxdigit (p[1]) && g_ascii_isxdigit (p[2]))
+        {
+          char hex[3] = { p[1], p[2], 0 };
+
+          g_string_append_c (out, (char)(strtoul (hex, NULL, 16) & 0xff));
+          p += 2;
+        }
+      else
+        {
+          g_string_append_c (out, *p);
+        }
+    }
+
+  return g_string_free (out, FALSE);
+}
+
+/**
+ * ptyxis_nsl_is_vm_unit_path:
+ * @object_path: (nullable): the object path of a unit on the session bus
+ *
+ * A VM runs as the transient user unit nsl-UID-vm-ID.service, which systemd
+ * exports at /org/freedesktop/systemd1/unit/ with the name escaped.
+ *
+ * Returns: whether @object_path is the unit of an nsl VM
+ */
+gboolean
+ptyxis_nsl_is_vm_unit_path (const char *object_path)
+{
+  g_autofree char *name = NULL;
+  const char *escaped;
+
+  if (object_path == NULL ||
+      !g_str_has_prefix (object_path, PTYXIS_NSL_SYSTEMD_UNIT_PREFIX))
+    return FALSE;
+
+  escaped = object_path + strlen (PTYXIS_NSL_SYSTEMD_UNIT_PREFIX);
+
+  /* 1 unit name, not a path below it */
+  if (escaped[0] == 0 || strchr (escaped, '/') != NULL)
+    return FALSE;
+
+  name = unescape_unit_path (escaped);
+
+  return is_vm_unit_name (name);
+}
+
+/**
+ * ptyxis_nsl_vm_unit_stopped:
+ * @previous_state: (nullable): the ActiveState this watcher saw last
+ * @active_state: (nullable): the ActiveState systemd reports now
+ *
+ * A VM that stops reports "inactive", and a VM that fails reports "failed".
+ * A unit that systemd loaded only to answer a query, such as nsl's own
+ * `systemctl show`, reports "inactive" with no state before it; that is not a
+ * stop, and treating it as one would make every list trigger another.
+ *
+ * Returns: whether a VM stopped between @previous_state and @active_state
+ */
+gboolean
+ptyxis_nsl_vm_unit_stopped (const char *previous_state,
+                            const char *active_state)
+{
+  if (g_strcmp0 (active_state, "inactive") != 0 &&
+      g_strcmp0 (active_state, "failed") != 0)
+    return FALSE;
+
+  return g_strcmp0 (previous_state, "active") == 0 ||
+         g_strcmp0 (previous_state, "activating") == 0 ||
+         g_strcmp0 (previous_state, "deactivating") == 0 ||
+         g_strcmp0 (previous_state, "reloading") == 0;
+}
+
+/**
+ * ptyxis_nsl_unit_states_update:
+ * @states: a table of object path to the last ActiveState, as strings
+ * @object_path: the object path of a unit that reported a change
+ * @active_state: the ActiveState it reports now
+ *
+ * Records a change that systemd signalled for an nsl VM unit.
+ *
+ * Returns: whether the change is a VM that stopped
+ */
+gboolean
+ptyxis_nsl_unit_states_update (GHashTable *states,
+                               const char *object_path,
+                               const char *active_state)
+{
+  g_autofree char *previous_state = NULL;
+
+  g_return_val_if_fail (states != NULL, FALSE);
+
+  if (!ptyxis_nsl_is_vm_unit_path (object_path) || active_state == NULL)
+    return FALSE;
+
+  /* The lookup is borrowed, and the replace frees the state it points at */
+  previous_state = g_strdup (g_hash_table_lookup (states, object_path));
+  g_hash_table_replace (states, g_strdup (object_path), g_strdup (active_state));
+
+  return ptyxis_nsl_vm_unit_stopped (previous_state, active_state);
+}
+
+/**
+ * ptyxis_nsl_unit_states_seed:
+ * @states: a table of object path to the last ActiveState, as strings
+ * @object_path: the object path of a loaded unit
+ * @active_state: its ActiveState when systemd listed it
+ *
+ * Records the state of a unit that was loaded before the watcher started,
+ * so that a VM that already runs counts as stopped when it next reports
+ * "inactive" or "failed". A signal that came before the list is newer
+ * than the list or as new, so a state that is known already stays.
+ *
+ * Returns: whether the state was recorded
+ */
+gboolean
+ptyxis_nsl_unit_states_seed (GHashTable *states,
+                             const char *object_path,
+                             const char *active_state)
+{
+  g_return_val_if_fail (states != NULL, FALSE);
+
+  if (!ptyxis_nsl_is_vm_unit_path (object_path) ||
+      active_state == NULL ||
+      g_hash_table_contains (states, object_path))
+    return FALSE;
+
+  g_hash_table_insert (states, g_strdup (object_path), g_strdup (active_state));
+
+  return TRUE;
+}
+
 /**
  * ptyxis_nsl_parse_machines:
  * @json: the output of `nsl list --json`
@@ -232,6 +416,77 @@ ptyxis_nsl_parse_machines (const char  *json,
     }
 
   return g_steal_pointer (&machines);
+}
+
+/**
+ * ptyxis_nsl_parse_vms:
+ * @json: the output of `nsl list --json`
+ *
+ * Reads the VMs of the document, which `nsl list` reports beside the
+ * machines. A document with no "vms" array gives no VMs rather than an
+ * error, so that the machines still list; Igloo then shows no disk sizes.
+ *
+ * Returns: (transfer full) (nullable): the VMs, or %NULL on error
+ */
+GPtrArray *
+ptyxis_nsl_parse_vms (const char  *json,
+                      GError     **error)
+{
+  g_autoptr(JsonParser) parser = json_parser_new ();
+  g_autoptr(GPtrArray) vms = NULL;
+  JsonNode *root;
+  JsonObject *object;
+  JsonArray *array;
+
+  if (json == NULL)
+    json = "";
+
+  if (!json_parser_load_from_data (parser, json, -1, error))
+    return NULL;
+
+  if (!(root = json_parser_get_root (parser)) ||
+      !JSON_NODE_HOLDS_OBJECT (root) ||
+      !(object = json_node_get_object (root)))
+    {
+      g_set_error (error,
+                   G_IO_ERROR,
+                   G_IO_ERROR_INVALID_DATA,
+                   "nsl reported no VMs");
+      return NULL;
+    }
+
+  vms = g_ptr_array_new_with_free_func ((GDestroyNotify)ptyxis_nsl_vm_free);
+
+  if (!(array = member_array (object, "vms")))
+    return g_steal_pointer (&vms);
+
+  for (guint i = 0; i < json_array_get_length (array); i++)
+    {
+      JsonObject *entry = array_object (array, i);
+      const char *name = member_string (entry, "name");
+      gint64 data_disk_gib = 0;
+      PtyxisNslVm *vm;
+
+      if (!ptyxis_nsl_is_valid_name (name))
+        continue;
+
+      /* nsl grows a data disk from 1 to 4096 GiB; anything else is not a
+       * size Igloo can show or change.
+       */
+      if (!member_int (entry, "data_disk_gib", &data_disk_gib) ||
+          data_disk_gib < 1 || data_disk_gib > 4096)
+        data_disk_gib = 0;
+
+      vm = g_new0 (PtyxisNslVm, 1);
+      vm->name = g_strdup (name);
+      vm->role = g_strdup (member_string (entry, "role"));
+      vm->state = g_strdup (member_string (entry, "state"));
+      vm->data_disk_gib = data_disk_gib;
+
+      g_ptr_array_add (vms, vm);
+    }
+
+  return g_steal_pointer (&vms);
 }
 
 /**
