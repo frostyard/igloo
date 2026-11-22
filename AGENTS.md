@@ -122,6 +122,30 @@ by hand (`make verify` checks their hashes). `scripts/check-template.mjs` and
 - Report problems with Ptyxis itself upstream; this repository holds the
   nsl features and the Igloo name.
 
+## Releases and dependencies
+
+- **Tag format:** `v<major>.<minor>`, as Ptyxis numbers its releases
+  (tags `v50.2` and `v51.0`). The tags have no GitHub release.
+- **How a release starts:** the push of a `v*` tag runs
+  `.github/workflows/flatpak.yml`: it builds and tests the Flatpak, pushes
+  the OCI image to `ghcr.io/frostyard/igloo`, attests it, moves `latest`,
+  publishes the end-of-life image for the previous ID and asks
+  frostyard/flatpak-index to refresh
+  ([build and release](docs/design/build-and-release.md)).
+- **Who tags:** the maintainer. Agents never tag, push a tag or publish a
+  release.
+- **Version rule:** Igloo's version follows Ptyxis's
+  ([org ADRs](docs/org-adrs.md)); no svu. The `version` in `meson.build`
+  comes from upstream. A tool that picks the next version: not stated.
+- **Internal dependencies:** frostyard/core's `pr-triage.yml`, pinned by
+  commit SHA in `.github/workflows/risk-paths.yml` (core has no release
+  tags); the `publish.yml` dispatch to frostyard/flatpak-index in
+  `flatpak.yml`; nsl 0.8.0 or later on the host at run time (`README.md`),
+  not pinned; the vendored copies named under "Vendored files" above.
+- **Who uses this repository:** frostyard/flatpak-index lists its `latest`
+  image (`apps.json`) for the Frostyard remote; the user guide is in
+  frostyard/frostyard-org.
+
 ## Documentation rules (enforced)
 
 Docs live in `docs/` in four categories. **Every new doc starts from its
